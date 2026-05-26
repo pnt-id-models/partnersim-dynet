@@ -9,7 +9,7 @@ probabilities stratified by sex, sexual orientation, and age group.
 
 ## Status
 
-🚧 Pre-release. Under active development.
+Pre-release. Under active development.
 
 ## Installation
 
