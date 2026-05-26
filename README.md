@@ -22,7 +22,7 @@ pip install partnersim-dynet
 ### From source
 
 ```bash
-git clone https://github.com/yourusername/partnersim-dynet.git
+git clone https://github.com/pnt-id-models/partnersim-dynet.git
 cd partnersim-dynet
 poetry install
 ```
