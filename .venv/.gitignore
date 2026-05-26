@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Poetry
+dist/
+*.egg-info/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+output/
+results/
+*.parquet
+*.csv
+!tests/**/*.csv  # but DO commit test fixtures
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb  # consider whether you want to commit notebooks; for a library I'd skip them
