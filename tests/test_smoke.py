@@ -1,4 +1,5 @@
 """Smoke test: package imports and version is exposed."""
+
 import partnersim_dynet
 
 
