@@ -9,9 +9,10 @@ import matplotlib
 # Use a non-interactive backend so tests don't try to open windows
 matplotlib.use("Agg")
 
+
 import matplotlib.pyplot as plt
 import pytest
-from dataclasses import FrozenInstanceError
+
 from partnersim_dynet.network.plots import (
     PALETTE,
     NetworkPalette,
@@ -29,7 +30,8 @@ class TestPalette:
 
     def test_palette_is_frozen(self):
         """Mutating PALETTE should raise (dataclass frozen=True)."""
-        with pytest.raises(Exception):  # FrozenInstanceError
+        from dataclasses import FrozenInstanceError
+        with pytest.raises(FrozenInstanceError):  # FrozenInstanceError
             PALETTE.avg_degree = "#000000"  # type: ignore[misc]
 
     def test_orientation_color_known(self):

@@ -20,9 +20,9 @@ instead, which restores the previous settings on exit.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterator
 
 import matplotlib.pyplot as plt
 
@@ -147,7 +147,7 @@ class OutputFormats:
         return self.png or self.pdf or self.svg
 
     @classmethod
-    def all_enabled(cls) -> "OutputFormats":
+    def all_enabled(cls) -> OutputFormats:
         """Convenience: all three formats on."""
         return cls(png=True, pdf=True, svg=True)
 

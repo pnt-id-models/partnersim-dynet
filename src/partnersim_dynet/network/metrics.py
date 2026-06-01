@@ -27,9 +27,9 @@ import numpy as np
 import pandas as pd
 
 from partnersim_dynet.network.active_intervals import ActiveIntervals
-from partnersim_dynet.network.graph_builder import PartnershipArrays, build_graph_at
 from partnersim_dynet.network.graph_builder import (
     PartnershipArrays,
+    build_graph_at,
     iter_partnership_events,
 )
 

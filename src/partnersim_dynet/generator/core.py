@@ -12,13 +12,12 @@ per agent who never partnered).
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
-from typing import Optional
 
 import numpy as np
 import pandas as pd
 
 from partnersim_dynet.config import (
+    AGE_GROUPS,
     GUARANTEED_DEBUT_AGE,
     MAX_AGE,
     MIN_AGE,
@@ -29,7 +28,6 @@ from partnersim_dynet.config import (
     REPLENISHMENT_AGE,
     SEX_CODE_TO_STR,
     SEXUAL_DEBUT_PROBABILITIES,
-    AGE_GROUPS,
     PartnershipConfig,
 )
 from partnersim_dynet.generator.concurrency import select_concurrent_indices
@@ -78,7 +76,7 @@ class PartnershipGenerator:
     an identical output.
     """
 
-    def __init__(self, cfg: PartnershipConfig, seed: Optional[int] = None):
+    def __init__(self, cfg: PartnershipConfig, seed: int | None = None):
         self.cfg = cfg
         self._rng = np.random.default_rng(seed)
 
@@ -180,7 +178,9 @@ class PartnershipGenerator:
         # The "75" and "Unknown" buckets are simulation-internal and aren't used for initialisation, so we don't include them here.
         working_groups = [
             (lo, hi)
-            for label, lo, hi in zip(AGE_GROUPS, [16, 25, 35, 45, 55, 65], [24, 34, 44, 54, 64, 74])
+            for label, lo, hi in zip(
+                AGE_GROUPS, [16, 25, 35, 45, 55, 65], [24, 34, 44, 54, 64, 74], strict=False
+            )
         ]
 
         # Each group gets an equal share of the initial population, with any remainder distributed one-per-group until it runs out.

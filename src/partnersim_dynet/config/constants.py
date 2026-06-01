@@ -7,8 +7,8 @@ related mappings. Every other module imports from here.
 from __future__ import annotations
 
 """
-Age groups are used for age-based decay in formation probabilities, and for demographic structure in the partnership network. 
-The age-to-group mapping is defined by AGE_GROUP_BOUNDARIES and the age_to_group() function. 
+Age groups are used for age-based decay in formation probabilities, and for demographic structure in the partnership network.
+The age-to-group mapping is defined by AGE_GROUP_BOUNDARIES and the age_to_group() function.
 Inclusive age boundaries: an agent of age `a` belongs to group `label` if lo <= a <= hi. The "75+" group is the removal boundary — agents are removed from the simulation when they turn MAX_AGE.
 """
 
@@ -61,9 +61,9 @@ ORI_STR_TO_CODE: dict[str, int] = {v: k for k, v in ORI_CODE_TO_STR.items()}
 # Demographic distributions
 """
 These describe the demographic structure of the population: how many of each sex,
-how orientations are distributed within each sex, and at what age people enter sexual activity. 
+how orientations are distributed within each sex, and at what age people enter sexual activity.
 
-They are constants — not config — because they are not expected to vary betweeen experiments. 
+They are constants — not config — because they are not expected to vary betweeen experiments.
 
 If a future experiment needs to vary them to depict a particular population, then they can be promoted to config parameters.
 """

@@ -26,7 +26,6 @@ from partnersim_dynet.network.plots.style import (
     save_figure,
 )
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Spec for a single timeseries plot
 # ─────────────────────────────────────────────────────────────────────────────

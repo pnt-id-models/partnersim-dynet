@@ -30,7 +30,6 @@ import pytest
 from partnersim_dynet.config import PartnershipConfig
 from partnersim_dynet.generator import PartnershipGenerator
 
-
 # Configuration
 
 

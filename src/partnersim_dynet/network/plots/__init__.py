@@ -16,7 +16,7 @@ from partnersim_dynet.network.plots.ego_network import (
     plot_ego_network_dynamic,
     plot_ego_network_static_aggregate,
 )
-
+from partnersim_dynet.network.plots.heatmap import plot_degree_heatmap_evolution
 from partnersim_dynet.network.plots.style import (
     PALETTE,
     NetworkPalette,
@@ -24,7 +24,6 @@ from partnersim_dynet.network.plots.style import (
     publication_style,
     save_figure,
 )
-from partnersim_dynet.network.plots.heatmap import plot_degree_heatmap_evolution
 from partnersim_dynet.network.plots.timeseries import (
     SPEC_AVG_DEGREE,
     SPEC_AVG_PATH_LENGTH,

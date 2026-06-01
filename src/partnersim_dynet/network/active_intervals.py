@@ -54,7 +54,7 @@ class ActiveIntervals:
     # ── construction ──────────────────────────────────────────────────
 
     @classmethod
-    def from_agent_log(cls, agent_log: pd.DataFrame, total_timesteps: int) -> "ActiveIntervals":
+    def from_agent_log(cls, agent_log: pd.DataFrame, total_timesteps: int) -> ActiveIntervals:
         """Build active intervals from a generator agent log.
 
         Parameters
@@ -90,7 +90,6 @@ class ActiveIntervals:
         exit_raw = agent_log["ExitTimestep"]
         sentinel = total_timesteps + 1
         exit_t = exit_raw.astype("float64").fillna(sentinel).to_numpy(dtype=np.int32)
-
 
         if (entry_t <= 0).any():
             bad = agent_log.loc[entry_t <= 0, "Agent"].tolist()[:5]

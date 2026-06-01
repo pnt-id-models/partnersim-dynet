@@ -22,7 +22,6 @@ from partnersim_dynet.network.plots import (
     plot_ego_network_static_aggregate,
 )
 
-
 # identify_top_concurrent_agents
 
 

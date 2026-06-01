@@ -17,7 +17,6 @@ they tolerate small RNG-driven variation across NumPy versions.
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -27,7 +26,6 @@ from partnersim_dynet.config import (
     PartnershipConfig,
 )
 from partnersim_dynet.generator import PartnershipGenerator
-
 
 # Testing a 500-agent, 500-timestep simulation
 

@@ -13,15 +13,14 @@ the graph (rather than recomputing from scratch each timestep), use
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator
 
 import networkx as nx
 import numpy as np
 import pandas as pd
 
 from partnersim_dynet.network.active_intervals import ActiveIntervals
-
 
 # Preprocessing
 

@@ -24,9 +24,7 @@ import pandas as pd
 import seaborn as sns
 
 from partnersim_dynet.config import AGE_GROUPS, PartnershipConfig
-from partnersim_dynet.diagnostics.probability_tables import export_probability_bounds
 from partnersim_dynet.network.plots.style import OutputFormats, publication_style, save_figure
-
 
 _SEX_LABEL = {"Male": "Male", "Female": "Female"}
 

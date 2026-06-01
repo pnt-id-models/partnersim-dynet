@@ -18,7 +18,6 @@ from partnersim_dynet.config import (
 )
 from partnersim_dynet.generator.core import PartnershipGenerator
 
-
 # Tiny-simulation fixture
 
 

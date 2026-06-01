@@ -14,7 +14,6 @@ import pytest
 from partnersim_dynet import RunResult, run_replicates, run_single
 from partnersim_dynet.config import PartnershipConfig, SimulationConfig
 
-
 # Minimal config for fast tests
 
 
@@ -55,7 +54,7 @@ class TestRunSingleDefault:
 
 class TestRunSingleWithAnalysis:
     def test_run_metrics_writes_metrics(self, tmp_path):
-        result = run_single(
+        run_single(
             _tiny_cfg(),
             seed=42,
             output_dir=str(tmp_path),
@@ -113,7 +112,6 @@ class TestRunSingleWithAnalysis:
         assert len(result.files_written) > 15
 
 
-0
 # run_single: reproducibility
 
 

@@ -7,8 +7,9 @@ its own copies.
 """
 
 from partnersim_dynet.config.constants import (
-    AGE_GROUPS,
     AGE_GROUP_BOUNDARIES,
+    AGE_GROUPS,
+    GUARANTEED_DEBUT_AGE,
     MAX_AGE,
     MIN_AGE,
     ORI_CODE_TO_STR,
@@ -20,7 +21,6 @@ from partnersim_dynet.config.constants import (
     SEX_CODE_TO_STR,
     SEX_STR_TO_CODE,
     SEXUAL_DEBUT_PROBABILITIES,
-    GUARANTEED_DEBUT_AGE,
     age_to_group,
 )
 from partnersim_dynet.config.probabilities import ProbabilityConfig

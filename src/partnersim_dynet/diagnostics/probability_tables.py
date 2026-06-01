@@ -21,7 +21,6 @@ import pandas as pd
 
 from partnersim_dynet.config import AGE_GROUPS, PartnershipConfig
 
-
 # Base probability tables (from config)
 
 

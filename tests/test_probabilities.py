@@ -1,6 +1,5 @@
 """Tests for ProbabilityConfig — validation, construction, and reference behaviour."""
 
-import numpy as np
 import pytest
 
 from partnersim_dynet.config import AGE_GROUPS, ProbabilityConfig

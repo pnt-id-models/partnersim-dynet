@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 import pandas as pd
 
@@ -43,7 +43,6 @@ from partnersim_dynet.generator import PartnershipGenerator
 
 logger = logging.getLogger(__name__)
 
-0
 # Run summary returned by run_single
 
 
@@ -65,7 +64,6 @@ class RunResult:
 
 # I/O helper
 
-
 def _save_dataframe(df: pd.DataFrame, output_dir: str, name: str, fmt: str) -> str:
     """Save ``df`` to ``{output_dir}/{name}.{fmt}``. Returns the path."""
     if fmt not in ("parquet", "csv"):
@@ -80,7 +78,6 @@ def _save_dataframe(df: pd.DataFrame, output_dir: str, name: str, fmt: str) -> s
 
 
 # Single run
-
 
 def run_single(
     cfg: PartnershipConfig,
@@ -323,7 +320,6 @@ def run_single(
 
 # Multi-replicate batch
 
-
 def _run_single_worker(kwargs: dict) -> RunResult:
     """Worker function for ProcessPoolExecutor.
 
@@ -415,5 +411,5 @@ def run_replicates(
 
     # Sort by seed to give a deterministic return order regardless of which worker finished first
     seed_order = {int(seed): i for i, seed in enumerate(seeds)}
-    results.sort(key=lambda r: r.seed)
+    results.sort(key=lambda r: seed_order[r.seed])
     return results

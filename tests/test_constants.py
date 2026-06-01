@@ -3,8 +3,8 @@
 import pytest
 
 from partnersim_dynet.config import (
-    AGE_GROUPS,
     AGE_GROUP_BOUNDARIES,
+    AGE_GROUPS,
     MAX_AGE,
     MIN_AGE,
     REPLENISHMENT_AGE,

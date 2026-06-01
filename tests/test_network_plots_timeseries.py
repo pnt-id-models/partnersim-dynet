@@ -18,15 +18,15 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
-from dataclasses import FrozenInstanceError
 
 from partnersim_dynet.network.plots import (
-    OutputFormats,
     SPEC_AVG_DEGREE,
+    OutputFormats,
     TimeseriesSpec,
     plot_avg_degree,
     plot_avg_path_length,
@@ -78,7 +78,8 @@ class TestTimeseriesSpec:
         assert spec.filename_stem == "custom_name"
 
     def test_spec_is_frozen(self):
-        with pytest.raises(Exception):  # FrozenInstanceError
+        from dataclasses import FrozenInstanceError
+        with pytest.raises(FrozenInstanceError):  # FrozenInstanceError
             SPEC_AVG_DEGREE.color = "#FF0000"  # type: ignore[misc]
 
 

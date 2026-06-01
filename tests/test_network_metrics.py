@@ -321,7 +321,7 @@ class TestDegreeAtSnapshots:
         arr, active, log = small_setup_with_log
         # At t=15: only 1-2 active, so degrees are A1=1, A2=1, A3=0
         result = degree_at_snapshots([15], arr, active, log)
-        degrees = dict(zip(result["Agent"], result["Degree"]))
+        degrees = dict(zip(result["Agent"], result["Degree"], strict=False))
         assert degrees == {1: 1, 2: 1, 3: 0}
 
     def test_multiple_snapshots(self, small_setup_with_log):
@@ -343,7 +343,7 @@ class TestDegreeAtSnapshots:
         # accept the linear model since the agent log only stores entry age.
         # We just want to verify the column exists and is sensible.
         result = degree_at_snapshots([1], arr, active, log)
-        ages = dict(zip(result["Agent"], result["AgentAge"]))
+        ages = dict(zip(result["Agent"], result["AgentAge"], strict=False))
         # At t=1, all agents are at their entry age
         assert ages == {1: 25, 2: 24, 3: 30}
 
@@ -363,7 +363,7 @@ class TestDegreeInWindow:
         # Window [1, 50] covers everything. Agent 1 partnered with {2},
         # Agent 2 partnered with {1, 3}, Agent 3 partnered with {2}.
         result = degree_in_window(1, 50, arr, active, log)
-        degrees = dict(zip(result["Agent"], result["Degree"]))
+        degrees = dict(zip(result["Agent"], result["Degree"], strict=False))
         assert degrees == {1: 1, 2: 2, 3: 1}
 
     def test_narrow_window(self, small_setup_with_log):
@@ -373,7 +373,7 @@ class TestDegreeInWindow:
         # Window [22, 28]: only 1-2 partnership (t=10-30) is fully overlapping
         # and 2-3 partnership (t=20-40) is also overlapping
         result = degree_in_window(22, 28, arr, active, log)
-        degrees = dict(zip(result["Agent"], result["Degree"]))
+        degrees = dict(zip(result["Agent"], result["Degree"], strict=False))
         # 1 partnered with 2; 2 partnered with both; 3 partnered with 2
         assert degrees == {1: 1, 2: 2, 3: 1}
 
@@ -383,7 +383,7 @@ class TestDegreeInWindow:
         arr, active, log = small_setup_with_log
         # Window [45, 50] — both partnerships have ended
         result = degree_in_window(45, 50, arr, active, log)
-        degrees = dict(zip(result["Agent"], result["Degree"]))
+        degrees = dict(zip(result["Agent"], result["Degree"], strict=False))
         # All agents present, but no partnerships
         assert degrees == {1: 0, 2: 0, 3: 0}
 
@@ -439,7 +439,7 @@ class TestDegreeByDemographicOverTime:
         assert mid["MeanDegree"].sum() > 0
 
 
-class TestIntegrationWithGenerator:
+class TestSegreeFunctionsIntegrationWithGenerator:
     """Spot-check the three functions work end-to-end with a real run."""
 
     def test_all_three_functions_work(self):
