@@ -34,10 +34,7 @@ from partnersim_dynet.network.plots import (
     plot_transitivity,
 )
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Helpers
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _make_metrics_df(n_timesteps: int = 100) -> pd.DataFrame:
     """Build a synthetic metrics DataFrame with all the columns the plot
@@ -54,11 +51,7 @@ def _make_metrics_df(n_timesteps: int = 100) -> pd.DataFrame:
         "num_edges": rng.integers(0, 50, size=n_timesteps),
     })
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 # TimeseriesSpec
-# ─────────────────────────────────────────────────────────────────────────────
-
 class TestTimeseriesSpec:
     def test_filename_stem_derived_from_column(self):
         spec = TimeseriesSpec(
@@ -84,10 +77,7 @@ class TestTimeseriesSpec:
             SPEC_AVG_DEGREE.color = "#FF0000"  # type: ignore[misc]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # plot_timeseries — core function
-# ─────────────────────────────────────────────────────────────────────────────
-
 class TestPlotTimeseries:
     def test_writes_png_by_default(self, tmp_path):
         metrics = _make_metrics_df()
@@ -145,9 +135,7 @@ class TestPlotTimeseries:
         assert after == before
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Convenience wrappers
-# ─────────────────────────────────────────────────────────────────────────────
 
 class TestConvenienceWrappers:
     @pytest.mark.parametrize(
@@ -166,10 +154,7 @@ class TestConvenienceWrappers:
         assert any(expected_stem in p for p in written)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # No global state pollution
-# ─────────────────────────────────────────────────────────────────────────────
-
 class TestNoGlobalPollution:
     def test_rcparams_not_mutated(self, tmp_path):
         """Calling a plot function should not mutate global rcParams.
@@ -184,10 +169,8 @@ class TestNoGlobalPollution:
         assert plt.rcParams["axes.spines.top"] == original_spines
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Integration with generator + metrics
-# ─────────────────────────────────────────────────────────────────────────────
 
+# Integration with generator 
 class TestIntegrationWithRealMetrics:
     def test_runs_against_real_metrics_output(self, tmp_path):
         """End-to-end: simulate, compute metrics, plot all four."""

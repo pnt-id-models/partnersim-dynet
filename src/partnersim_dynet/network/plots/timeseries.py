@@ -83,9 +83,7 @@ SPEC_AVG_PATH_LENGTH = TimeseriesSpec(
 )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Core plotting function
-# ─────────────────────────────────────────────────────────────────────────────
 
 def plot_timeseries(
     metrics: pd.DataFrame,
@@ -180,9 +178,7 @@ def plot_timeseries(
     return written
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Convenience wrappers — one per built-in spec
-# ─────────────────────────────────────────────────────────────────────────────
+# Wrappers for the four standard plots, which just call the core function 
 
 def plot_avg_degree(
     metrics: pd.DataFrame,
