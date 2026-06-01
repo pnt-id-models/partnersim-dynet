@@ -64,6 +64,7 @@ class RunResult:
 
 # I/O helper
 
+
 def _save_dataframe(df: pd.DataFrame, output_dir: str, name: str, fmt: str) -> str:
     """Save ``df`` to ``{output_dir}/{name}.{fmt}``. Returns the path."""
     if fmt not in ("parquet", "csv"):
@@ -78,6 +79,7 @@ def _save_dataframe(df: pd.DataFrame, output_dir: str, name: str, fmt: str) -> s
 
 
 # Single run
+
 
 def run_single(
     cfg: PartnershipConfig,
@@ -319,6 +321,7 @@ def run_single(
 
 
 # Multi-replicate batch
+
 
 def _run_single_worker(kwargs: dict) -> RunResult:
     """Worker function for ProcessPoolExecutor.

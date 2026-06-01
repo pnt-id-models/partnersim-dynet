@@ -31,6 +31,7 @@ class TestPalette:
     def test_palette_is_frozen(self):
         """Mutating PALETTE should raise (dataclass frozen=True)."""
         from dataclasses import FrozenInstanceError
+
         with pytest.raises(FrozenInstanceError):  # FrozenInstanceError
             PALETTE.avg_degree = "#000000"  # type: ignore[misc]
 

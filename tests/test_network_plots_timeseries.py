@@ -79,6 +79,7 @@ class TestTimeseriesSpec:
 
     def test_spec_is_frozen(self):
         from dataclasses import FrozenInstanceError
+
         with pytest.raises(FrozenInstanceError):  # FrozenInstanceError
             SPEC_AVG_DEGREE.color = "#FF0000"  # type: ignore[misc]
 
