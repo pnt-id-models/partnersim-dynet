@@ -6,7 +6,7 @@ components, clustering, and path-length metrics.
 
 For static (single-timestep) analysis, the per-metric functions in this
 module work on any `networkx.Graph`. Pass them a graph from
-`build_graph_at` 
+`build_graph_at`
 
 Design
 ------
@@ -15,7 +15,7 @@ Design
 - APL uses sampled BFS from a random sample of LCC nodes. Each source's
   mean distance to others is computed, then averaged across sources.
 - Clustering uses transitivity (3 * triangles / triads), not the per-node
-  average. 
+  average.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from partnersim_dynet.network.graph_builder import (
     PartnershipArrays,
     iter_partnership_events,
 )
+
 
 def _attach_demographics(
     degrees: pd.DataFrame,
@@ -71,7 +72,9 @@ def _attach_demographics(
     demo = demo.drop(columns=["EntryAge", "EntryTimestep"])
     return degrees.merge(demo, on="Agent", how="left")
 
+
 # Per-graph metric functions
+
 
 def degree_stats(G: nx.Graph) -> tuple[float, int, int]:
     """Return (avg_degree, max_degree, n_active_nodes).
@@ -111,9 +114,7 @@ def transitivity(G: nx.Graph) -> float:
     return nx.transitivity(G)
 
 
-def sampled_avg_path_length(
-    G: nx.Graph, sample_size: int, rng: np.random.Generator
-) -> float:
+def sampled_avg_path_length(G: nx.Graph, sample_size: int, rng: np.random.Generator) -> float:
     """True mean pairwise shortest-path length in the LCC, sampled.
 
     Algorithm:
@@ -150,6 +151,7 @@ def sampled_avg_path_length(
 
 
 # Main driver: time series of metrics
+
 
 def compute_temporal_metrics(
     partnerships: PartnershipArrays,
@@ -264,11 +266,11 @@ def compute_temporal_metrics(
         metrics["largest_component_size"].append(lcc_size)
         metrics["mean_component_size"].append(mean_comp)
         metrics["transitivity"].append(transitivity(G))
-        metrics["avg_path_length"].append(
-            sampled_avg_path_length(G, apl_sample_size, rng)
-        )
+        metrics["avg_path_length"].append(sampled_avg_path_length(G, apl_sample_size, rng))
 
     return pd.DataFrame(metrics)
+
+
 # Add after compute_temporal_metrics
 def degree_at_snapshots(
     snapshot_times: list[int],
@@ -324,11 +326,17 @@ def degree_at_snapshots(
     if not pieces:
         return pd.DataFrame(
             columns=[
-                "t", "Agent", "Degree",
-                "AgentSex", "AgentOrientation", "AgentAge", "AgentAgeGroup",
+                "t",
+                "Agent",
+                "Degree",
+                "AgentSex",
+                "AgentOrientation",
+                "AgentAge",
+                "AgentAgeGroup",
             ]
         )
     return pd.concat(pieces, ignore_index=True)
+
 
 def degree_in_window(
     t_start: int,
@@ -392,19 +400,23 @@ def degree_in_window(
         active_in_window |= active.active_at(t)
 
     rows = [
-        {"Agent": aid, "Degree": len(partners.get(aid, set()))}
-        for aid in sorted(active_in_window)
+        {"Agent": aid, "Degree": len(partners.get(aid, set()))} for aid in sorted(active_in_window)
     ]
     df = pd.DataFrame(rows)
     if df.empty:
         return pd.DataFrame(
             columns=[
-                "Agent", "Degree",
-                "AgentSex", "AgentOrientation", "AgentAge", "AgentAgeGroup",
+                "Agent",
+                "Degree",
+                "AgentSex",
+                "AgentOrientation",
+                "AgentAge",
+                "AgentAgeGroup",
             ]
         )
 
     return _attach_demographics(df, agent_log, snapshot_t=t_start)
+
 
 def degree_by_demographic_over_time(
     partnerships: PartnershipArrays,
@@ -515,27 +527,37 @@ def degree_by_demographic_over_time(
 
         for (sex, orientation, age_group), degs in buckets.items():
             arr = np.asarray(degs)
-            rows.append({
-                "t": t,
-                "AgentSex": sex,
-                "AgentOrientation": orientation,
-                "AgentAgeGroup": age_group,
-                "MeanDegree": float(arr.mean()),
-                "P50Degree": float(np.percentile(arr, 50)),
-                "P90Degree": float(np.percentile(arr, 90)),
-                "N": int(len(arr)),
-            })
+            rows.append(
+                {
+                    "t": t,
+                    "AgentSex": sex,
+                    "AgentOrientation": orientation,
+                    "AgentAgeGroup": age_group,
+                    "MeanDegree": float(arr.mean()),
+                    "P50Degree": float(np.percentile(arr, 50)),
+                    "P90Degree": float(np.percentile(arr, 90)),
+                    "N": int(len(arr)),
+                }
+            )
 
     if not rows:
         return pd.DataFrame(
             columns=[
-                "t", "AgentSex", "AgentOrientation", "AgentAgeGroup",
-                "MeanDegree", "P50Degree", "P90Degree", "N",
+                "t",
+                "AgentSex",
+                "AgentOrientation",
+                "AgentAgeGroup",
+                "MeanDegree",
+                "P50Degree",
+                "P90Degree",
+                "N",
             ]
         )
     return pd.DataFrame(rows)
 
+
 # Internal helpers
+
 
 def _edge_key(a: int, b: int) -> tuple[int, int]:
     """Canonical undirected edge key (smaller, larger)."""

@@ -24,13 +24,14 @@ from partnersim_dynet.config import AGE_GROUPS, PartnershipConfig
 
 # Base probability tables (from config)
 
+
 def print_probability_table(
     cfg: PartnershipConfig,
     include_breakage: bool = True,
 ) -> None:
     """Print the calibrated formation (and optionally breakage) probabilities.
 
-    Uses the base tables from ``cfg.probabilities`` 
+    Uses the base tables from ``cfg.probabilities``
     No per-agent heterogeneity is applied at this stage. Useful for sanity-checking that the
     multiplicative model produced the expected rates
 
@@ -91,15 +92,11 @@ def save_probability_table(cfg: PartnershipConfig, output_path: str) -> str:
     for sex in formation:
         for ori in formation[sex]:
             for age in AGE_GROUPS:
-                rows.append(
-                    ("Formation", sex, ori, age, formation[sex][ori][age])
-                )
+                rows.append(("Formation", sex, ori, age, formation[sex][ori][age]))
     for sex in breakage:
         for ori in breakage[sex]:
             for age in AGE_GROUPS:
-                rows.append(
-                    ("Breakage", sex, ori, age, breakage[sex][ori][age])
-                )
+                rows.append(("Breakage", sex, ori, age, breakage[sex][ori][age]))
 
     parent = os.path.dirname(output_path)
     if parent:
@@ -112,7 +109,9 @@ def save_probability_table(cfg: PartnershipConfig, output_path: str) -> str:
 
     return output_path
 
+
 # Effective probability bounds (from real simulation)
+
 
 def export_probability_bounds(
     cfg: PartnershipConfig,
@@ -152,8 +151,13 @@ def export_probability_bounds(
     from partnersim_dynet.config import age_to_group
 
     required = {
-        "Agent", "Sex", "Orientation", "EntryAge",
-        "NBMultiplierForm", "NBMultiplierBreak", "HighActive",
+        "Agent",
+        "Sex",
+        "Orientation",
+        "EntryAge",
+        "NBMultiplierForm",
+        "NBMultiplierBreak",
+        "HighActive",
     }
     missing = required - set(agent_log.columns)
     if missing:
@@ -166,9 +170,7 @@ def export_probability_bounds(
     df["AgeGroup"] = df["EntryAge"].apply(age_to_group)
 
     def _effective(row, base_table: dict, mult_col: str) -> float:
-        base = base_table.get(row["Sex"], {}).get(
-            row["Orientation"], {}
-        ).get(row["AgeGroup"], 0.0)
+        base = base_table.get(row["Sex"], {}).get(row["Orientation"], {}).get(row["AgeGroup"], 0.0)
         prob = base * row[mult_col]
         if row["HighActive"]:
             prob *= cfg.high_activity_multiplier
@@ -181,9 +183,7 @@ def export_probability_bounds(
         lambda r: _effective(r, breakage, "NBMultiplierBreak"), axis=1
     )
 
-    grouped = df.groupby(
-        ["AgeGroup", "Sex", "Orientation"], as_index=False
-    ).agg(
+    grouped = df.groupby(["AgeGroup", "Sex", "Orientation"], as_index=False).agg(
         AgentCount=("Agent", "size"),
         Formation_Effective_Min=("Formation_Effective", "min"),
         Formation_Effective_Max=("Formation_Effective", "max"),
@@ -193,24 +193,29 @@ def export_probability_bounds(
 
     # Attach base rates separately (constant per combo)
     grouped["Formation_Base"] = grouped.apply(
-        lambda r: formation.get(r["Sex"], {}).get(
-            r["Orientation"], {}
-        ).get(r["AgeGroup"], 0.0),
+        lambda r: formation.get(r["Sex"], {}).get(r["Orientation"], {}).get(r["AgeGroup"], 0.0),
         axis=1,
     )
     grouped["Breakage_Base"] = grouped.apply(
-        lambda r: breakage.get(r["Sex"], {}).get(
-            r["Orientation"], {}
-        ).get(r["AgeGroup"], 0.0),
+        lambda r: breakage.get(r["Sex"], {}).get(r["Orientation"], {}).get(r["AgeGroup"], 0.0),
         axis=1,
     )
 
     # Order columns logically
-    return grouped[[
-        "AgeGroup", "Sex", "Orientation", "AgentCount",
-        "Formation_Base", "Formation_Effective_Min", "Formation_Effective_Max",
-        "Breakage_Base", "Breakage_Effective_Min", "Breakage_Effective_Max",
-    ]]
+    return grouped[
+        [
+            "AgeGroup",
+            "Sex",
+            "Orientation",
+            "AgentCount",
+            "Formation_Base",
+            "Formation_Effective_Min",
+            "Formation_Effective_Max",
+            "Breakage_Base",
+            "Breakage_Effective_Min",
+            "Breakage_Effective_Max",
+        ]
+    ]
 
 
 def export_probability_bounds_csv(

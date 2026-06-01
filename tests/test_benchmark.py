@@ -34,19 +34,20 @@ from partnersim_dynet.generator import PartnershipGenerator
 # Configuration
 
 
-# Baseline: time in seconds for the benchmark simulation on the original development machine. 
-# Update this manually after intentional performance changes. 
+# Baseline: time in seconds for the benchmark simulation on the original development machine.
+# Update this manually after intentional performance changes.
 BENCHMARK_BASELINE_SECONDS: float = 15.0
 
 # Ratios over the baseline that trigger different responses.
-REGRESSION_WARN_THRESHOLD: float = 1.5    # 50% slower → warn
-REGRESSION_FAIL_THRESHOLD: float = 5.0    # 5x slower → fail
+REGRESSION_WARN_THRESHOLD: float = 1.5  # 50% slower → warn
+REGRESSION_FAIL_THRESHOLD: float = 5.0  # 5x slower → fail
 
 # How many runs to average over
 N_REPEATS: int = 5
 
 
 # The benchmark
+
 
 @pytest.mark.slow
 @pytest.mark.benchmark

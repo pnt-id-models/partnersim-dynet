@@ -73,14 +73,14 @@ class TestBuildNodeAttr:
             [
                 {
                     "Agent": 1,
-                    "Sex": "Males",
+                    "Sex": "Male",
                     "Orientation": "Opposite-sex",
                     "EntryAge": 25,
                     "EntryTimestep": 1,
                 },
                 {
                     "Agent": 2,
-                    "Sex": "Females",
+                    "Sex": "Female",
                     "Orientation": "Bisexual",
                     "EntryAge": 30,
                     "EntryTimestep": 1,
@@ -88,15 +88,15 @@ class TestBuildNodeAttr:
             ]
         )
         attr = build_node_attr(log)
-        assert attr[1] == {"Sex": "Males", "Orientation": "Opposite-sex", "Age": 25}
-        assert attr[2] == {"Sex": "Females", "Orientation": "Bisexual", "Age": 30}
+        assert attr[1] == {"Sex": "Male", "Orientation": "Opposite-sex", "Age": 25}
+        assert attr[2] == {"Sex": "Female", "Orientation": "Bisexual", "Age": 30}
 
     def test_with_snapshot_advances_age(self):
         log = pd.DataFrame(
             [
                 {
                     "Agent": 1,
-                    "Sex": "Males",
+                    "Sex": "Male",
                     "Orientation": "Opposite-sex",
                     "EntryAge": 25,
                     "EntryTimestep": 1,

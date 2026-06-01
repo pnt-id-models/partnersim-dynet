@@ -97,11 +97,11 @@ class PartnershipGenerator:
         self.sex_arr = np.full(self.capacity, -1, dtype=np.int8)
         self.ori_arr = np.full(self.capacity, -1, dtype=np.int8)
         self.age_arr = np.full(self.capacity, -1, dtype=np.int16)
-        
+
         # Days since last birthday, for accurate ageing at each timestep. Agents age up when this hits 365; new agents start at a random point in the year.
         self.days_since_last_bday = np.zeros(self.capacity, dtype=np.int16)
-        
-        # Active flag: False means the slot is empty and should be ignored. True means the slot is occupied by an agent who hasn't yet reached MAX_AGE. 
+
+        # Active flag: False means the slot is empty and should be ignored. True means the slot is occupied by an agent who hasn't yet reached MAX_AGE.
         # Sexually active flag: True means the agent is eligible to form partnerships. Agents start sexually active if they've hit GUARANTEED_DEBUT_AGE, else they have a debut probability based on their current age.
         self.active = np.zeros(self.capacity, dtype=bool)
         self.sexually_active_arr = np.zeros(self.capacity, dtype=bool)
@@ -124,15 +124,15 @@ class PartnershipGenerator:
         self.id2idx: dict[int, int] = {}
         # IDs 1..num_agents are the initial cohort; new agents get next_agent_id++
         self.next_agent_id: int = cfg.num_agents + 1
-        # When no slots are freed by removal, next_free_idx advances. 
+        # When no slots are freed by removal, next_free_idx advances.
         self.next_free_idx: int = cfg.num_agents
 
         # ── Partnership tracking ───────────────────────────────────────
         # partnerships[idx] = {partner_idx: start_time}
         # external_partner[idx] = {removed_partner_aid: {"start_time": t}}
         # The split is because removed partners no longer have a slot, so we track them by their stable ID instead.
-        
-        # Single dictionaries per slot, populated when needed. 
+
+        # Single dictionaries per slot, populated when needed.
         self.partnerships: list[dict[int, int]] = [{} for _ in range(self.capacity)]
         self.external_partner: list[dict[int, dict]] = [{} for _ in range(self.capacity)]
 
@@ -155,7 +155,7 @@ class PartnershipGenerator:
         self.single_agents: set[int] = set()
 
         # ── Probability lookup caches ──────────────────────────────────
-        # Avoid recomputing base probabilities for the same (sex, ori, age_group) tuple every time. 
+        # Avoid recomputing base probabilities for the same (sex, ori, age_group) tuple every time.
         self._formation_base_cache: dict[tuple, float] = {}
         self._breakage_base_cache: dict[tuple, float] = {}
 
@@ -182,12 +182,12 @@ class PartnershipGenerator:
             (lo, hi)
             for label, lo, hi in zip(AGE_GROUPS, [16, 25, 35, 45, 55, 65], [24, 34, 44, 54, 64, 74])
         ]
-        
+
         # Each group gets an equal share of the initial population, with any remainder distributed one-per-group until it runs out.
         n_per_group = self.cfg.num_agents // len(working_groups)
         remainder = self.cfg.num_agents % len(working_groups)
 
-        # Iterate through the groups in order, filling slots with agents drawn from the group's age range until we hit num_agents. 
+        # Iterate through the groups in order, filling slots with agents drawn from the group's age range until we hit num_agents.
         # This ensures the initial population is exactly num_agents even if the age groups don't divide it evenly.
         idx = 0
         for group_idx, (lo, hi) in enumerate(working_groups):
@@ -208,7 +208,7 @@ class PartnershipGenerator:
                 self.days_since_last_bday[idx] = self._rng.integers(0, 365)
                 self.active[idx] = True
 
-                # Sexual debut: certain after GUARANTEED_DEBUT_AGE, else use cumulative debut probability up to current age. Guaranteed debut is at 21. 
+                # Sexual debut: certain after GUARANTEED_DEBUT_AGE, else use cumulative debut probability up to current age. Guaranteed debut is at 21.
                 age = int(self.age_arr[idx])
                 if age >= GUARANTEED_DEBUT_AGE:
                     self.sexually_active_arr[idx] = True
@@ -241,7 +241,7 @@ class PartnershipGenerator:
         """Flag the initial concurrency-allowed cohort.
 
         The number selected is `round(num_agents * concurrency_prop)`.
-        The selection method depends on `cfg.concurrency_model` and 
+        The selection method depends on `cfg.concurrency_model` and
         implemented using the pure function in `concurrency.py`.
         """
         if self.cfg.concurrency_prop <= 0:
@@ -254,7 +254,7 @@ class PartnershipGenerator:
         age_codes = fast_digitise_age_group(self.age_arr[: self.cfg.num_agents].astype(np.int16))
         age_group_labels = _AGE_GROUP_LABELS_FOR_NUMBA[age_codes]
 
-        # Assign attributes and select concurrent agents using the function, which applies the concurrency model logic and demographic distribution maintenance. 
+        # Assign attributes and select concurrent agents using the function, which applies the concurrency model logic and demographic distribution maintenance.
         # The selected indices are relative to the initial cohort.
         selected_idxs = select_concurrent_indices(
             candidate_indices=np.arange(self.cfg.num_agents, dtype=np.int32),
@@ -277,14 +277,14 @@ class PartnershipGenerator:
             ag = age_group_labels[idx]
             key = (ag, int(self.sex_arr[idx]), int(self.ori_arr[idx]))
             self.concurrent_combo_targets[key] = self.concurrent_combo_targets.get(key, 0) + 1
-    
-    def _log_initial_cohort(self) -> None:
-            """Write agent log entries for the initial cohort.
 
-            Called after `_initialise_concurrency()` so concurrency status is accurate at log time. 
-            """
-            for idx in range(self.cfg.num_agents):
-                self._log_agent_entry(idx, entry_timestep=1)
+    def _log_initial_cohort(self) -> None:
+        """Write agent log entries for the initial cohort.
+
+        Called after `_initialise_concurrency()` so concurrency status is accurate at log time.
+        """
+        for idx in range(self.cfg.num_agents):
+            self._log_agent_entry(idx, entry_timestep=1)
 
     def _sample_nb(self, size: int) -> np.ndarray:
         """Draw NB heterogeneity multipliers, normalised so the mean is 1.
@@ -307,12 +307,11 @@ class PartnershipGenerator:
 
     # Probability lookups
 
-
     def _formation_prob(self, sex_code: int, ori_code: int, age_group: str, idx: int) -> float:
         """Effective per-step formation probability for agent at `idx`.
 
         Applies the agent's NB multiplier and high-activity boost on top
-        of the base table value, then clips the probability to [prob_floor, prob_ceiling]. 
+        of the base table value, then clips the probability to [prob_floor, prob_ceiling].
         This returns the final per-step probability that an agent with the given
         demographics and heterogeneity will form a partnership, before applying the concurrency cap filter.
 
@@ -361,13 +360,12 @@ class PartnershipGenerator:
             breakage_probs[idx] = max(self.cfg.prob_floor, min(prob, self.cfg.prob_ceiling))
         return breakage_probs
 
-
     # Agent log management
 
     def _log_agent_entry(self, idx: int, entry_timestep: int) -> None:
         """Record the entry of an agent in the agent log.
 
-        Called once at agent creation. Stores demographic snapshot plus entry metadata. 
+        Called once at agent creation. Stores demographic snapshot plus entry metadata.
         Exit fields are filled in later (or remain None if the agent survives to end-of-simulation).
         """
         aid = int(self.idx2id[idx])
@@ -972,7 +970,7 @@ class PartnershipGenerator:
     def _partnership_type_strs(sex_a: str, sex_b: str | None) -> str:
         if sex_a != sex_b:
             return "M-F"
-        if sex_a == "Males":
+        if sex_a == "Male":
             return "M-M"
         return "F-F"
 

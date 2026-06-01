@@ -288,7 +288,7 @@ def _draw_ego_panel(
     def _attr(n):
         return node_attr.get(n, {}) if node_attr else {}
 
-    for sex in ("Males", "Females"):
+    for sex in ("Male", "Female"):
         marker = PALETTE.sex_shape(sex)
         group = [n for n in nodes if _attr(n).get("Sex") == sex]
         if not group:
@@ -340,7 +340,7 @@ def _add_ego_legend(fig, y_anchor: float = 0.02) -> None:
     handles = []
 
     handles.append(Line2D([0], [0], color="none", label="Sex:"))
-    for sex in ("Males", "Females"):
+    for sex in ("Male", "Female"):
         handles.append(
             Line2D(
                 [0],

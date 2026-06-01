@@ -31,11 +31,12 @@ from partnersim_dynet.generator import PartnershipGenerator
 
 # Testing a 500-agent, 500-timestep simulation
 
+
 @pytest.fixture(scope="module")
 def integration_run() -> tuple[PartnershipGenerator, pd.DataFrame, pd.DataFrame]:
     """A single 500-agent, 500-timestep simulation, shared across tests.
 
-    Using scope="module" means the simulation runs once per test file load, not once per test. 
+    Using scope="module" means the simulation runs once per test file load, not once per test.
     """
     cfg = PartnershipConfig(
         num_agents=500,
@@ -50,6 +51,7 @@ def integration_run() -> tuple[PartnershipGenerator, pd.DataFrame, pd.DataFrame]
 
 
 # Population invariants over time
+
 
 class TestPopulationInvariants:
     """The population should stay structurally consistent across the run."""
@@ -79,7 +81,8 @@ class TestPopulationInvariants:
         assert active_ages.min() >= MIN_AGE
 
 
-# Agent log 
+# Agent log
+
 
 class TestAgentLogIntegrity:
     def test_every_agent_in_partnership_df_is_in_log(self, integration_run):
@@ -99,9 +102,7 @@ class TestAgentLogIntegrity:
         initial = log.iloc[: gen.cfg.num_agents]
         assert (initial["EntryTimestep"] == 1).all()
 
-    def test_replenishments_have_entry_age_equal_to_replenishment_age(
-        self, integration_run
-    ):
+    def test_replenishments_have_entry_age_equal_to_replenishment_age(self, integration_run):
         gen, _, log = integration_run
         replenishments = log.iloc[gen.cfg.num_agents :]
         if len(replenishments) > 0:
@@ -117,6 +118,7 @@ class TestAgentLogIntegrity:
 
 
 # Partnership dynamics
+
 
 class TestPartnershipDynamics:
     def test_partnerships_are_formed(self, integration_run):
@@ -147,11 +149,11 @@ class TestPartnershipDynamics:
         _, partnerships, _ = integration_run
         real = partnerships[partnerships["PartnerAgent"].notna()]
         # Cast partner agent to int for comparison
-        assert (
-            real["Agent"].astype(int) != real["PartnerAgent"].astype(int)
-        ).all()
+        assert (real["Agent"].astype(int) != real["PartnerAgent"].astype(int)).all()
+
 
 # Demographic compatibility
+
 
 class TestPartnershipCompatibility:
     """Partnerships should respect orientation rules: opposite-sex agents
@@ -175,7 +177,8 @@ class TestPartnershipCompatibility:
         valid_orientations = {"Opposite-sex", "Bisexual"}
         assert opposite_sex["AgentOrientation"].isin(valid_orientations).all()
 
-# Reproducibility 
+
+# Reproducibility
 class TestIntegrationReproducibility:
     def test_full_simulation_is_deterministic(self):
         """A full simulation should produce bit-identical output across runs

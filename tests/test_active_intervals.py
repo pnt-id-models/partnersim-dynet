@@ -8,6 +8,7 @@ import pytest
 
 from partnersim_dynet.network import ActiveIntervals
 
+
 # Helpers
 def _make_log(rows: list[dict]) -> pd.DataFrame:
     """Make a minimal agent log DataFrame for tests."""
@@ -19,47 +20,59 @@ def _make_log(rows: list[dict]) -> pd.DataFrame:
     df["ExitTimestep"] = df["ExitTimestep"].astype("float64")
     return df
 
+
 # Construction
 class TestConstruction:
     def test_minimal_log(self):
-        log = _make_log([
-            {"Agent": 1, "EntryTimestep": 1, "ExitTimestep": 500.0},
-        ])
+        log = _make_log(
+            [
+                {"Agent": 1, "EntryTimestep": 1, "ExitTimestep": 500.0},
+            ]
+        )
         active = ActiveIntervals.from_agent_log(log, total_timesteps=1000)
         assert len(active) == 1
         assert active.total_timesteps == 1000
 
     def test_nan_exit_becomes_sentinel(self):
-        log = _make_log([
-            {"Agent": 1, "EntryTimestep": 1, "ExitTimestep": float("nan")},
-        ])
+        log = _make_log(
+            [
+                {"Agent": 1, "EntryTimestep": 1, "ExitTimestep": float("nan")},
+            ]
+        )
         active = ActiveIntervals.from_agent_log(log, total_timesteps=1000)
         # total_timesteps + 1
         assert active.exit_t[0] == 1001
 
     def test_missing_column_raises(self):
-        log = pd.DataFrame({
-            "Agent": [1, 2],
-            "EntryTimestep": [1, 2],
-            # ExitTimestep missing
-        })
+        log = pd.DataFrame(
+            {
+                "Agent": [1, 2],
+                "EntryTimestep": [1, 2],
+                # ExitTimestep missing
+            }
+        )
         with pytest.raises(ValueError, match="missing required columns"):
             ActiveIntervals.from_agent_log(log, total_timesteps=100)
 
     def test_zero_total_timesteps_raises(self):
-        log = _make_log([
-            {"Agent": 1, "EntryTimestep": 1, "ExitTimestep": 100.0},
-        ])
+        log = _make_log(
+            [
+                {"Agent": 1, "EntryTimestep": 1, "ExitTimestep": 100.0},
+            ]
+        )
         with pytest.raises(ValueError, match="total_timesteps"):
             ActiveIntervals.from_agent_log(log, total_timesteps=0)
 
     def test_zero_entry_timestep_raises(self):
         # EntryTimestep should be 1-indexed per the generator's convention
-        log = _make_log([
-            {"Agent": 1, "EntryTimestep": 0, "ExitTimestep": 100.0},
-        ])
+        log = _make_log(
+            [
+                {"Agent": 1, "EntryTimestep": 0, "ExitTimestep": 100.0},
+            ]
+        )
         with pytest.raises(ValueError, match="EntryTimestep"):
             ActiveIntervals.from_agent_log(log, total_timesteps=100)
+
 
 # Query semantics
 class TestActiveQueries:
@@ -69,11 +82,13 @@ class TestActiveQueries:
         #   1: active throughout [1, 1000]   (active at end)
         #   2: active during    [1, 500)     (exited at t=500)
         #   3: active during    [200, 800)   (joined later, exited mid-run)
-        log = _make_log([
-            {"Agent": 1, "EntryTimestep": 1,   "ExitTimestep": float("nan")},
-            {"Agent": 2, "EntryTimestep": 1,   "ExitTimestep": 500.0},
-            {"Agent": 3, "EntryTimestep": 200, "ExitTimestep": 800.0},
-        ])
+        log = _make_log(
+            [
+                {"Agent": 1, "EntryTimestep": 1, "ExitTimestep": float("nan")},
+                {"Agent": 2, "EntryTimestep": 1, "ExitTimestep": 500.0},
+                {"Agent": 3, "EntryTimestep": 200, "ExitTimestep": 800.0},
+            ]
+        )
         return ActiveIntervals.from_agent_log(log, total_timesteps=1000)
 
     def test_active_at_start(self, active):
@@ -106,36 +121,44 @@ class TestActiveQueries:
         assert active.is_active(999, t=50) is False
 
     def test_bounds_returns_entry_exit(self, active):
-        assert active.bounds(1) == (1, 1001)   # sentinel for active-at-end
+        assert active.bounds(1) == (1, 1001)  # sentinel for active-at-end
         assert active.bounds(2) == (1, 500)
         assert active.bounds(3) == (200, 800)
 
     def test_bounds_unknown_agent_returns_none(self, active):
         assert active.bounds(999) is None
 
+
 # Array-form query
+
 
 class TestActiveAtArray:
     def test_returns_ndarray(self):
-        log = _make_log([
-            {"Agent": 1, "EntryTimestep": 1, "ExitTimestep": 100.0},
-            {"Agent": 2, "EntryTimestep": 1, "ExitTimestep": 100.0},
-        ])
+        log = _make_log(
+            [
+                {"Agent": 1, "EntryTimestep": 1, "ExitTimestep": 100.0},
+                {"Agent": 2, "EntryTimestep": 1, "ExitTimestep": 100.0},
+            ]
+        )
         active = ActiveIntervals.from_agent_log(log, total_timesteps=200)
         arr = active.active_at_array(50)
         assert isinstance(arr, np.ndarray)
         np.testing.assert_array_equal(sorted(arr), [1, 2])
 
     def test_empty_when_nobody_active(self):
-        log = _make_log([
-            {"Agent": 1, "EntryTimestep": 100, "ExitTimestep": 200.0},
-        ])
+        log = _make_log(
+            [
+                {"Agent": 1, "EntryTimestep": 100, "ExitTimestep": 200.0},
+            ]
+        )
         active = ActiveIntervals.from_agent_log(log, total_timesteps=500)
         # At t=50, agent 1 hasn't joined yet
         arr = active.active_at_array(50)
         assert len(arr) == 0
 
+
 # Integration with generator
+
 
 class TestIntegrationWithGenerator:
     """Spot-check that active intervals work on a real generator output."""

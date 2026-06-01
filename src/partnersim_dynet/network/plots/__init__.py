@@ -7,6 +7,16 @@ All plot functions:
 - Wrap their drawing in ``publication_style`` (no global rcParams pollution)
 """
 
+from partnersim_dynet.network.plots.ego_network import (
+    EgoLayout,
+    build_node_attr,
+    build_shared_ego_layouts,
+    identify_top_concurrent_agents,
+    plot_ego_network_active_snapshot,
+    plot_ego_network_dynamic,
+    plot_ego_network_static_aggregate,
+)
+
 from partnersim_dynet.network.plots.style import (
     PALETTE,
     NetworkPalette,
@@ -14,6 +24,7 @@ from partnersim_dynet.network.plots.style import (
     publication_style,
     save_figure,
 )
+from partnersim_dynet.network.plots.heatmap import plot_degree_heatmap_evolution
 from partnersim_dynet.network.plots.timeseries import (
     SPEC_AVG_DEGREE,
     SPEC_AVG_PATH_LENGTH,
@@ -45,4 +56,14 @@ __all__ = [
     "plot_max_degree",
     "plot_timeseries",
     "plot_transitivity",
+    # heatmap
+    "plot_degree_heatmap_evolution",
+    # ego networks
+    "EgoLayout",
+    "build_node_attr",
+    "build_shared_ego_layouts",
+    "identify_top_concurrent_agents",
+    "plot_ego_network_active_snapshot",
+    "plot_ego_network_dynamic",
+    "plot_ego_network_static_aggregate",
 ]

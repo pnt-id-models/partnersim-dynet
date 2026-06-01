@@ -67,7 +67,7 @@ class NetworkPalette:
 
     def sex_shape(self, sex: str) -> str:
         """Return the marker shape for a given sex string."""
-        return self.male_shape if sex == "Males" else self.female_shape
+        return self.male_shape if sex == "Male" else self.female_shape
 
 
 # Module-level default palette. Tests and callers should treat this as

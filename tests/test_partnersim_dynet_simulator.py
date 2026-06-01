@@ -161,8 +161,9 @@ class TestRunReplicatesSerial:
             n_workers=1,
         )
         results = run_replicates(sim_cfg, str(tmp_path))
-        seeds = [r.seed for r in results]
-        assert seeds == sorted(seeds)
+        results_seeds = [r.seed for r in results]
+        expected_seeds = sim_cfg.partnership_seeds()
+        assert results_seeds == expected_seeds
 
 
 class TestRunReplicatesParallel:

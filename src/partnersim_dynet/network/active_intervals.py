@@ -54,9 +54,7 @@ class ActiveIntervals:
     # ── construction ──────────────────────────────────────────────────
 
     @classmethod
-    def from_agent_log(
-        cls, agent_log: pd.DataFrame, total_timesteps: int
-    ) -> "ActiveIntervals":
+    def from_agent_log(cls, agent_log: pd.DataFrame, total_timesteps: int) -> "ActiveIntervals":
         """Build active intervals from a generator agent log.
 
         Parameters
@@ -79,14 +77,10 @@ class ActiveIntervals:
         required = {"Agent", "EntryTimestep", "ExitTimestep"}
         missing = required - set(agent_log.columns)
         if missing:
-            raise ValueError(
-                f"agent_log is missing required columns: {sorted(missing)}"
-            )
+            raise ValueError(f"agent_log is missing required columns: {sorted(missing)}")
 
         if total_timesteps <= 0:
-            raise ValueError(
-                f"total_timesteps must be positive, got {total_timesteps}"
-            )
+            raise ValueError(f"total_timesteps must be positive, got {total_timesteps}")
 
         agent_ids = agent_log["Agent"].to_numpy(dtype=np.int64)
         entry_t = agent_log["EntryTimestep"].to_numpy(dtype=np.int32)
@@ -95,13 +89,12 @@ class ActiveIntervals:
         # is total_timesteps + 1 so active-at-t comparisons work uniformly.
         exit_raw = agent_log["ExitTimestep"]
         sentinel = total_timesteps + 1
-        exit_t = exit_raw.fillna(sentinel).to_numpy(dtype=np.int32)
+        exit_t = exit_raw.astype("float64").fillna(sentinel).to_numpy(dtype=np.int32)
+
 
         if (entry_t <= 0).any():
             bad = agent_log.loc[entry_t <= 0, "Agent"].tolist()[:5]
-            raise ValueError(
-                f"EntryTimestep must be positive; bad agents include {bad}"
-            )
+            raise ValueError(f"EntryTimestep must be positive; bad agents include {bad}")
 
         return cls(
             agent_ids=agent_ids,
@@ -156,7 +149,4 @@ class ActiveIntervals:
         return len(self.agent_ids)
 
     def __repr__(self) -> str:
-        return (
-            f"ActiveIntervals(n_agents={len(self)}, "
-            f"total_timesteps={self.total_timesteps})"
-        )
+        return f"ActiveIntervals(n_agents={len(self)}, " f"total_timesteps={self.total_timesteps})"

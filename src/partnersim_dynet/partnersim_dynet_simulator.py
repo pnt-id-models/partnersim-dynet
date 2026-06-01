@@ -414,5 +414,6 @@ def run_replicates(
                 raise
 
     # Sort by seed to give a deterministic return order regardless of which worker finished first
+    seed_order = {int(seed): i for i, seed in enumerate(seeds)}
     results.sort(key=lambda r: r.seed)
     return results

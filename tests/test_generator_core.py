@@ -33,6 +33,7 @@ def small_sim() -> tuple[PartnershipGenerator, pd.DataFrame]:
 
 # Construction
 
+
 class TestConstruction:
     def test_default_construction(self):
         cfg = PartnershipConfig(num_agents=100, total_timesteps=10)
@@ -65,8 +66,8 @@ class TestConstruction:
         assert 15 <= len(gen.active_concurrent_ids) <= 25
 
 
-
 # Output shape
+
 
 class TestOutputStructure:
     def test_partnership_df_columns(self, small_sim):
@@ -128,29 +129,32 @@ class TestOutputStructure:
         assert singletons["StartTime"].isna().all()
 
     def test_agent_log_concurrency_matches_generator_state(self):
-            """Initial-cohort concurrency status in the log must match the
-            generator's runtime state. Catches a class of ordering bugs where
-            concurrency is assigned after the log entries are written."""
-            cfg = PartnershipConfig(
-                num_agents=200, total_timesteps=10,
-                concurrency_prop=0.15, concurrency_model=1,
-            )
-            gen = PartnershipGenerator(cfg, seed=42)
-            log = gen.get_agent_log()
+        """Initial-cohort concurrency status in the log must match the
+        generator's runtime state. Catches a class of ordering bugs where
+        concurrency is assigned after the log entries are written."""
+        cfg = PartnershipConfig(
+            num_agents=200,
+            total_timesteps=10,
+            concurrency_prop=0.15,
+            concurrency_model=1,
+        )
+        gen = PartnershipGenerator(cfg, seed=42)
+        log = gen.get_agent_log()
 
-            # State and log must agree on the count.
-            state_count = len(gen.active_concurrent_ids)
-            log_count = int(log["ConcurrencyAllowed"].sum())
-            assert state_count == log_count, (
-                f"State has {state_count} concurrent agents but log has {log_count}"
-            )
+        # State and log must agree on the count.
+        state_count = len(gen.active_concurrent_ids)
+        log_count = int(log["ConcurrencyAllowed"].sum())
+        assert (
+            state_count == log_count
+        ), f"State has {state_count} concurrent agents but log has {log_count}"
 
-            # Every concurrent agent in the state must have ConcurrencyCap set.
-            log_concurrent = log[log["ConcurrencyAllowed"]]
-            assert log_concurrent["ConcurrencyCap"].notna().all()
+        # Every concurrent agent in the state must have ConcurrencyCap set.
+        log_concurrent = log[log["ConcurrencyAllowed"]]
+        assert log_concurrent["ConcurrencyCap"].notna().all()
 
 
 # Invariants the simulation should maintain
+
 
 class TestInvariants:
     def test_population_stays_constant(self, small_sim):
@@ -185,8 +189,8 @@ class TestInvariants:
         assert set(df["RelationshipType"].unique()).issubset(valid)
 
 
-
 # Reproducibility
+
 
 class TestReproducibility:
     def test_same_seed_produces_same_partnership_df(self):
@@ -216,6 +220,7 @@ class TestReproducibility:
 
 
 # Sexual debut behaviour
+
 
 class TestSexualDebut:
     def test_agents_above_guaranteed_age_are_sexually_active(self):

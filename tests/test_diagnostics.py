@@ -23,9 +23,11 @@ from partnersim_dynet.diagnostics import (
 
 # Helpers
 
+
 def _real_agent_log():
     """Run a small simulation and return the agent log."""
     from partnersim_dynet.generator import PartnershipGenerator
+
     cfg = PartnershipConfig(num_agents=300, total_timesteps=100)
     gen = PartnershipGenerator(cfg, seed=42)
     gen.simulate_partnerships()
@@ -34,14 +36,15 @@ def _real_agent_log():
 
 # Probability tables (base rates, config only)
 
+
 class TestPrintProbabilityTable:
     def test_prints_without_crashing(self, capsys):
         cfg = PartnershipConfig()
         print_probability_table(cfg)
         captured = capsys.readouterr()
         assert "Calibrated probabilities" in captured.out
-        assert "Males" in captured.out
-        assert "Females" in captured.out
+        assert "Male" in captured.out
+        assert "Female" in captured.out
         assert "16-24" in captured.out
 
     def test_without_breakage(self, capsys):
@@ -64,6 +67,7 @@ class TestSaveProbabilityTable:
         assert {"Formation", "Breakage"} <= set(df["Type"])
         # All age groups present
         from partnersim_dynet.config import AGE_GROUPS
+
         assert set(df["AgeGroup"]) >= set(AGE_GROUPS)
 
     def test_creates_parent_dir(self, tmp_path):
@@ -74,14 +78,22 @@ class TestSaveProbabilityTable:
 
 # Effective probability bounds (from real run)
 
+
 class TestExportProbabilityBounds:
     def test_returns_dataframe_with_expected_columns(self):
         cfg, log = _real_agent_log()
         bounds = export_probability_bounds(cfg, log)
         expected = {
-            "AgeGroup", "Sex", "Orientation", "AgentCount",
-            "Formation_Base", "Formation_Effective_Min", "Formation_Effective_Max",
-            "Breakage_Base", "Breakage_Effective_Min", "Breakage_Effective_Max",
+            "AgeGroup",
+            "Sex",
+            "Orientation",
+            "AgentCount",
+            "Formation_Base",
+            "Formation_Effective_Min",
+            "Formation_Effective_Max",
+            "Breakage_Base",
+            "Breakage_Effective_Min",
+            "Breakage_Effective_Max",
         }
         assert set(bounds.columns) == expected
 
@@ -92,8 +104,7 @@ class TestExportProbabilityBounds:
         bounds = export_probability_bounds(cfg, log)
         # At least one combo should have Effective_Max strictly > Base
         gap = bounds["Formation_Effective_Max"] - bounds["Formation_Base"]
-        assert (gap > 0).any(), \
-            "no combo had effective max above base — NB multiplier broken?"
+        assert (gap > 0).any(), "no combo had effective max above base — NB multiplier broken?"
 
     def test_agent_count_sums_to_log_length(self):
         cfg, log = _real_agent_log()
@@ -110,22 +121,20 @@ class TestExportProbabilityBounds:
 class TestExportProbabilityBoundsCsv:
     def test_writes_csv(self, tmp_path):
         cfg, log = _real_agent_log()
-        path = export_probability_bounds_csv(
-            cfg, log, str(tmp_path / "bounds.csv")
-        )
+        path = export_probability_bounds_csv(cfg, log, str(tmp_path / "bounds.csv"))
         assert os.path.exists(path)
         # Read it back to confirm it's valid
         df = pd.read_csv(path)
         assert "AgentCount" in df.columns
 
+
 # Agent probability distribution plots
+
 
 class TestPlotAgentProbabilityDistributions:
     def test_writes_six_figures(self, tmp_path):
         cfg, log = _real_agent_log()
-        written = plot_agent_probability_distributions(
-            cfg, log, str(tmp_path)
-        )
+        written = plot_agent_probability_distributions(cfg, log, str(tmp_path))
         # 2 sexes × 3 orientations × 1 format = 6 files (PNG by default)
         assert len(written) == 6
         for p in written:
@@ -134,9 +143,12 @@ class TestPlotAgentProbabilityDistributions:
 
     def test_writes_all_formats(self, tmp_path):
         from partnersim_dynet.network.plots import OutputFormats
+
         cfg, log = _real_agent_log()
         written = plot_agent_probability_distributions(
-            cfg, log, str(tmp_path),
+            cfg,
+            log,
+            str(tmp_path),
             formats=OutputFormats.all_enabled(),
         )
         # 6 combinations × 3 formats = 18 files

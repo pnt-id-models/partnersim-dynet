@@ -26,15 +26,17 @@ def main() -> None:
         n_workers=2,
         verbose=True,
         run_metrics=True,
-        run_plots=False,       # too heavy per-replicate
+        run_plots=False,  # too heavy per-replicate
         run_diagnostics=False,
     )
 
     output_dir = Path(__file__).parent / "output" / "sweep"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Running {sim_cfg.n_partnership_replicates} replicates "
-          f"with {sim_cfg.n_workers} workers")
+    print(
+        f"Running {sim_cfg.n_partnership_replicates} replicates "
+        f"with {sim_cfg.n_workers} workers"
+    )
     print(f"Output: {output_dir}")
     print()
 

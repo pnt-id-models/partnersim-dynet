@@ -19,6 +19,7 @@ from partnersim_dynet.network import (
 
 # Per-graph metric functions
 
+
 class TestDegreeStats:
     def test_empty_graph(self):
         G = nx.Graph()
@@ -49,6 +50,7 @@ class TestDegreeStats:
         assert avg == pytest.approx(8 / 5)
         assert mx == 4
         assert active == 5
+
 
 class TestComponentStats:
     def test_empty(self):
@@ -91,9 +93,9 @@ class TestTransitivity:
 
 class TestSampledAvgPathLength:
     def test_empty_returns_zero(self):
-        assert sampled_avg_path_length(
-            nx.Graph(), sample_size=10, rng=np.random.default_rng(0)
-        ) == 0.0
+        assert (
+            sampled_avg_path_length(nx.Graph(), sample_size=10, rng=np.random.default_rng(0)) == 0.0
+        )
 
     def test_single_edge_lcc(self):
         G = nx.Graph()
@@ -113,24 +115,29 @@ class TestSampledAvgPathLength:
 
 # Temporal driver
 
+
 @pytest.fixture
 def small_temporal_setup() -> tuple:
     """Build a small partnership + active setup for testing the temporal driver."""
     # 3 agents, all active 1..50
-    log = pd.DataFrame({
-        "Agent": [1, 2, 3],
-        "EntryTimestep": [1, 1, 1],
-        "ExitTimestep": [float("nan")] * 3,
-    })
+    log = pd.DataFrame(
+        {
+            "Agent": [1, 2, 3],
+            "EntryTimestep": [1, 1, 1],
+            "ExitTimestep": [float("nan")] * 3,
+        }
+    )
     log["Agent"] = log["Agent"].astype("int64")
     log["EntryTimestep"] = log["EntryTimestep"].astype("int32")
     log["ExitTimestep"] = log["ExitTimestep"].astype("float64")
     active = ActiveIntervals.from_agent_log(log, total_timesteps=50)
 
-    df = pd.DataFrame([
-        {"Agent": 1, "PartnerAgent": 2, "StartTime": 10, "EndTime": 30},
-        {"Agent": 2, "PartnerAgent": 3, "StartTime": 20, "EndTime": 40},
-    ])
+    df = pd.DataFrame(
+        [
+            {"Agent": 1, "PartnerAgent": 2, "StartTime": 10, "EndTime": 30},
+            {"Agent": 2, "PartnerAgent": 3, "StartTime": 20, "EndTime": 40},
+        ]
+    )
     df["Agent"] = df["Agent"].astype("int64")
     df["PartnerAgent"] = df["PartnerAgent"].astype("float64")
     df["StartTime"] = df["StartTime"].astype("float64")
@@ -145,10 +152,19 @@ class TestComputeTemporalMetrics:
         arr, active = small_temporal_setup
         metrics = compute_temporal_metrics(arr, active, total_timesteps=50)
         expected = {
-            "t", "num_nodes", "num_edges", "active_nodes", "avg_degree",
-            "max_degree", "new_edges", "lost_edges",
-            "num_components", "largest_component_size", "mean_component_size",
-            "transitivity", "avg_path_length",
+            "t",
+            "num_nodes",
+            "num_edges",
+            "active_nodes",
+            "avg_degree",
+            "max_degree",
+            "new_edges",
+            "lost_edges",
+            "num_components",
+            "largest_component_size",
+            "mean_component_size",
+            "transitivity",
+            "avg_path_length",
         }
         assert set(metrics.columns) == expected
 
@@ -190,6 +206,7 @@ class TestComputeTemporalMetrics:
 
 # Reproducibility
 
+
 class TestMetricsReproducibility:
     def test_same_seed_gives_same_metrics(self, small_temporal_setup):
         arr, active = small_temporal_setup
@@ -197,7 +214,9 @@ class TestMetricsReproducibility:
         b = compute_temporal_metrics(arr, active, total_timesteps=50, rng_seed=42)
         pd.testing.assert_frame_equal(a, b)
 
+
 # Integration with generator
+
 
 class TestIntegrationWithGenerator:
     def test_full_pipeline(self):
@@ -214,9 +233,7 @@ class TestIntegrationWithGenerator:
         )
         arr = prepare_partnerships(df, total_timesteps=cfg.total_timesteps)
 
-        metrics = compute_temporal_metrics(
-            arr, active, total_timesteps=cfg.total_timesteps
-        )
+        metrics = compute_temporal_metrics(arr, active, total_timesteps=cfg.total_timesteps)
 
         assert len(metrics) == cfg.total_timesteps
         # Steady-state population: num_nodes should equal num_agents at every t
@@ -227,28 +244,51 @@ class TestIntegrationWithGenerator:
 # Degree distribution functions
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def small_setup_with_log() -> tuple:
     """A small partnership setup including the agent log needed by the
     degree functions."""
-    log = pd.DataFrame([
-        {"Agent": 1, "Sex": "Males",   "Orientation": "Opposite-sex",
-         "EntryAge": 25, "EntryTimestep": 1, "ExitTimestep": float("nan")},
-        {"Agent": 2, "Sex": "Females", "Orientation": "Opposite-sex",
-         "EntryAge": 24, "EntryTimestep": 1, "ExitTimestep": float("nan")},
-        {"Agent": 3, "Sex": "Females", "Orientation": "Bisexual",
-         "EntryAge": 30, "EntryTimestep": 1, "ExitTimestep": float("nan")},
-    ])
+    log = pd.DataFrame(
+        [
+            {
+                "Agent": 1,
+                "Sex": "Male",
+                "Orientation": "Opposite-sex",
+                "EntryAge": 25,
+                "EntryTimestep": 1,
+                "ExitTimestep": float("nan"),
+            },
+            {
+                "Agent": 2,
+                "Sex": "Female",
+                "Orientation": "Opposite-sex",
+                "EntryAge": 24,
+                "EntryTimestep": 1,
+                "ExitTimestep": float("nan"),
+            },
+            {
+                "Agent": 3,
+                "Sex": "Female",
+                "Orientation": "Bisexual",
+                "EntryAge": 30,
+                "EntryTimestep": 1,
+                "ExitTimestep": float("nan"),
+            },
+        ]
+    )
     log["Agent"] = log["Agent"].astype("int64")
     log["EntryTimestep"] = log["EntryTimestep"].astype("int32")
     log["ExitTimestep"] = log["ExitTimestep"].astype("float64")
 
     active = ActiveIntervals.from_agent_log(log, total_timesteps=50)
 
-    df = pd.DataFrame([
-        {"Agent": 1, "PartnerAgent": 2, "StartTime": 10, "EndTime": 30},
-        {"Agent": 2, "PartnerAgent": 3, "StartTime": 20, "EndTime": 40},
-    ])
+    df = pd.DataFrame(
+        [
+            {"Agent": 1, "PartnerAgent": 2, "StartTime": 10, "EndTime": 30},
+            {"Agent": 2, "PartnerAgent": 3, "StartTime": 20, "EndTime": 40},
+        ]
+    )
     df["Agent"] = df["Agent"].astype("int64")
     df["PartnerAgent"] = df["PartnerAgent"].astype("float64")
     df["StartTime"] = df["StartTime"].astype("float64")
@@ -261,16 +301,23 @@ def small_setup_with_log() -> tuple:
 class TestDegreeAtSnapshots:
     def test_columns(self, small_setup_with_log):
         from partnersim_dynet.network import degree_at_snapshots
+
         arr, active, log = small_setup_with_log
         result = degree_at_snapshots([15, 25, 35], arr, active, log)
         expected = {
-            "t", "Agent", "Degree",
-            "AgentSex", "AgentOrientation", "AgentAge", "AgentAgeGroup",
+            "t",
+            "Agent",
+            "Degree",
+            "AgentSex",
+            "AgentOrientation",
+            "AgentAge",
+            "AgentAgeGroup",
         }
         assert set(result.columns) == expected
 
     def test_known_degrees(self, small_setup_with_log):
         from partnersim_dynet.network import degree_at_snapshots
+
         arr, active, log = small_setup_with_log
         # At t=15: only 1-2 active, so degrees are A1=1, A2=1, A3=0
         result = degree_at_snapshots([15], arr, active, log)
@@ -279,6 +326,7 @@ class TestDegreeAtSnapshots:
 
     def test_multiple_snapshots(self, small_setup_with_log):
         from partnersim_dynet.network import degree_at_snapshots
+
         arr, active, log = small_setup_with_log
         # 3 timesteps × 3 agents = 9 rows
         result = degree_at_snapshots([5, 25, 45], arr, active, log)
@@ -286,6 +334,7 @@ class TestDegreeAtSnapshots:
 
     def test_agent_age_advances_correctly(self, small_setup_with_log):
         from partnersim_dynet.network import degree_at_snapshots
+
         arr, active, log = small_setup_with_log
         # Agent 1 enters at age 25 at t=1; at t=10, age is 25 (no birthday)
         # Note: age in our model is in years not timesteps, so the increment
@@ -300,6 +349,7 @@ class TestDegreeAtSnapshots:
 
     def test_empty_snapshot_list_raises(self, small_setup_with_log):
         from partnersim_dynet.network import degree_at_snapshots
+
         arr, active, log = small_setup_with_log
         with pytest.raises(ValueError, match="non-empty"):
             degree_at_snapshots([], arr, active, log)
@@ -308,6 +358,7 @@ class TestDegreeAtSnapshots:
 class TestDegreeInWindow:
     def test_known_partner_counts(self, small_setup_with_log):
         from partnersim_dynet.network import degree_in_window
+
         arr, active, log = small_setup_with_log
         # Window [1, 50] covers everything. Agent 1 partnered with {2},
         # Agent 2 partnered with {1, 3}, Agent 3 partnered with {2}.
@@ -317,6 +368,7 @@ class TestDegreeInWindow:
 
     def test_narrow_window(self, small_setup_with_log):
         from partnersim_dynet.network import degree_in_window
+
         arr, active, log = small_setup_with_log
         # Window [22, 28]: only 1-2 partnership (t=10-30) is fully overlapping
         # and 2-3 partnership (t=20-40) is also overlapping
@@ -327,6 +379,7 @@ class TestDegreeInWindow:
 
     def test_window_excluding_all_partnerships(self, small_setup_with_log):
         from partnersim_dynet.network import degree_in_window
+
         arr, active, log = small_setup_with_log
         # Window [45, 50] — both partnerships have ended
         result = degree_in_window(45, 50, arr, active, log)
@@ -336,6 +389,7 @@ class TestDegreeInWindow:
 
     def test_invalid_window_raises(self, small_setup_with_log):
         from partnersim_dynet.network import degree_in_window
+
         arr, active, log = small_setup_with_log
         with pytest.raises(ValueError, match="t_start"):
             degree_in_window(50, 10, arr, active, log)
@@ -344,16 +398,24 @@ class TestDegreeInWindow:
 class TestDegreeByDemographicOverTime:
     def test_columns(self, small_setup_with_log):
         from partnersim_dynet.network import degree_by_demographic_over_time
+
         arr, active, log = small_setup_with_log
         result = degree_by_demographic_over_time(arr, active, log, total_timesteps=50)
         expected = {
-            "t", "AgentSex", "AgentOrientation", "AgentAgeGroup",
-            "MeanDegree", "P50Degree", "P90Degree", "N",
+            "t",
+            "AgentSex",
+            "AgentOrientation",
+            "AgentAgeGroup",
+            "MeanDegree",
+            "P50Degree",
+            "P90Degree",
+            "N",
         }
         assert set(result.columns) == expected
 
     def test_only_populated_combos_present(self, small_setup_with_log):
         from partnersim_dynet.network import degree_by_demographic_over_time
+
         arr, active, log = small_setup_with_log
         result = degree_by_demographic_over_time(arr, active, log, total_timesteps=50)
         # We have 3 agents in 3 different combos. So at every timestep
@@ -363,6 +425,7 @@ class TestDegreeByDemographicOverTime:
 
     def test_mean_degree_changes_with_edges(self, small_setup_with_log):
         from partnersim_dynet.network import degree_by_demographic_over_time
+
         arr, active, log = small_setup_with_log
         result = degree_by_demographic_over_time(arr, active, log, total_timesteps=50)
 

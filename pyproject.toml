@@ -80,3 +80,10 @@ ignore_missing_imports = true  # numba/networkx have weak stubs
 testpaths = ["tests"]
 python_files = "test_*.py"
 addopts = "-v --cov=partnersim_dynet --cov-report=term-missing"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "benchmark: marks tests as benchmarks (deselect with '-m \"not benchmark\"')",
+]
+filterwarnings = [
+    "ignore:vert.*deprecated:PendingDeprecationWarning:seaborn.*",
+]

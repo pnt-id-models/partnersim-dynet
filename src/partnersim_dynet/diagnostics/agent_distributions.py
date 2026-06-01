@@ -28,7 +28,7 @@ from partnersim_dynet.diagnostics.probability_tables import export_probability_b
 from partnersim_dynet.network.plots.style import OutputFormats, publication_style, save_figure
 
 
-_SEX_LABEL = {"Males": "Male", "Females": "Female"}
+_SEX_LABEL = {"Male": "Male", "Female": "Female"}
 
 
 def plot_agent_probability_distributions(
@@ -74,22 +74,16 @@ def plot_agent_probability_distributions(
     df["AgeGroup"] = df["EntryAge"].apply(age_to_group)
 
     def _effective(row, base_table: dict, mult_col: str) -> float:
-        base = base_table.get(row["Sex"], {}).get(
-            row["Orientation"], {}
-        ).get(row["AgeGroup"], 0.0)
+        base = base_table.get(row["Sex"], {}).get(row["Orientation"], {}).get(row["AgeGroup"], 0.0)
         prob = base * row[mult_col]
         if row["HighActive"]:
             prob *= cfg.high_activity_multiplier
         return max(cfg.prob_floor, min(prob, cfg.prob_ceiling))
 
-    df["Formation"] = df.apply(
-        lambda r: _effective(r, formation, "NBMultiplierForm"), axis=1
-    )
-    df["Breakage"] = df.apply(
-        lambda r: _effective(r, breakage, "NBMultiplierBreak"), axis=1
-    )
+    df["Formation"] = df.apply(lambda r: _effective(r, formation, "NBMultiplierForm"), axis=1)
+    df["Breakage"] = df.apply(lambda r: _effective(r, breakage, "NBMultiplierBreak"), axis=1)
 
-    sexes = ("Males", "Females")
+    sexes = ("Male", "Female")
     orientations = ("Opposite-sex", "Same-sex", "Bisexual")
 
     # Per (sex, orientation, outcome) y-axis limits — keeps the visual
@@ -100,9 +94,9 @@ def plot_agent_probability_distributions(
         for ori in orientations:
             y_limits[sex][ori] = {}
             for outcome in ("Formation", "Breakage"):
-                vals = df.loc[
-                    (df["Sex"] == sex) & (df["Orientation"] == ori), outcome
-                ].dropna().values
+                vals = (
+                    df.loc[(df["Sex"] == sex) & (df["Orientation"] == ori), outcome].dropna().values
+                )
                 if len(vals) == 0:
                     y_limits[sex][ori][outcome] = (0.0, 1.0)
                     continue
@@ -120,9 +114,15 @@ def plot_agent_probability_distributions(
             with publication_style():
                 fig = plt.figure(figsize=(14, 6))
                 gs = gridspec.GridSpec(
-                    nrows=2, ncols=6, figure=fig,
-                    hspace=0.25, wspace=0.15,
-                    left=0.10, right=0.97, top=0.88, bottom=0.12,
+                    nrows=2,
+                    ncols=6,
+                    figure=fig,
+                    hspace=0.25,
+                    wspace=0.15,
+                    left=0.10,
+                    right=0.97,
+                    top=0.88,
+                    bottom=0.12,
                 )
 
                 for outcome_idx, outcome in enumerate(("Formation", "Breakage")):
@@ -142,23 +142,35 @@ def plot_agent_probability_distributions(
 
                         if cell.empty or cell["Probability"].dropna().empty:
                             ax.text(
-                                0.5, 0.5, "No data",
+                                0.5,
+                                0.5,
+                                "No data",
                                 transform=ax.transAxes,
-                                ha="center", va="center",
-                                fontsize=7, color="grey",
+                                ha="center",
+                                va="center",
+                                fontsize=7,
+                                color="grey",
                             )
                             ax.set_xticks([])
                             continue
 
                         sns.boxplot(
-                            data=cell, y="Probability",
-                            width=0.6, showfliers=True, ax=ax,
-                            color="#D3D3D3", linewidth=0.8,
+                            data=cell,
+                            y="Probability",
+                            width=0.6,
+                            showfliers=True,
+                            ax=ax,
+                            color="#D3D3D3",
+                            linewidth=0.8,
                         )
                         sns.stripplot(
-                            data=cell, y="Probability",
-                            color="black", size=2, alpha=0.3,
-                            jitter=0.2, ax=ax,
+                            data=cell,
+                            y="Probability",
+                            color="black",
+                            size=2,
+                            alpha=0.3,
+                            jitter=0.2,
+                            ax=ax,
                         )
 
                         if outcome_idx == 0:
@@ -172,25 +184,33 @@ def plot_agent_probability_distributions(
 
                 fig.suptitle(
                     f"{_SEX_LABEL[sex]} — {ori} partnerships",
-                    fontsize=12, fontweight="bold", y=0.98,
+                    fontsize=12,
+                    fontweight="bold",
+                    y=0.98,
                 )
                 fig.text(
-                    0.02, 0.5, "Probability",
-                    va="center", ha="center",
+                    0.02,
+                    0.5,
+                    "Probability",
+                    va="center",
+                    ha="center",
                     rotation="vertical",
-                    fontsize=10, fontweight="bold",
+                    fontsize=10,
+                    fontweight="bold",
                 )
                 fig.text(
-                    0.5, 0.02, "Age group",
-                    va="center", ha="center",
-                    fontsize=10, fontweight="bold",
+                    0.5,
+                    0.02,
+                    "Age group",
+                    va="center",
+                    ha="center",
+                    fontsize=10,
+                    fontweight="bold",
                 )
 
                 safe_ori = ori.replace("-", "").replace(" ", "")
                 filename = f"{filename_prefix}_{_SEX_LABEL[sex]}_{safe_ori}"
-                paths = save_figure(
-                    fig, os.path.join(output_dir, filename), formats
-                )
+                paths = save_figure(fig, os.path.join(output_dir, filename), formats)
                 written.extend(paths)
                 plt.close(fig)
 

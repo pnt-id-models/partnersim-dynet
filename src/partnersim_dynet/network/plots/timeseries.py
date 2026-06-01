@@ -31,6 +31,7 @@ from partnersim_dynet.network.plots.style import (
 # Spec for a single timeseries plot
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class TimeseriesSpec:
     """Configuration for one timeseries plot.
@@ -85,6 +86,7 @@ SPEC_AVG_PATH_LENGTH = TimeseriesSpec(
 
 # Core plotting function
 
+
 def plot_timeseries(
     metrics: pd.DataFrame,
     spec: TimeseriesSpec,
@@ -135,9 +137,7 @@ def plot_timeseries(
         fig.patch.set_facecolor("white")
 
         ax.plot(metrics["t"], metrics[spec.metric_column], color=spec.color, lw=1.4)
-        ax.fill_between(
-            metrics["t"], 0, metrics[spec.metric_column], color=spec.color, alpha=0.12
-        )
+        ax.fill_between(metrics["t"], 0, metrics[spec.metric_column], color=spec.color, alpha=0.12)
 
         ax.set_xlim(t_start, t_end)
         ax.set_xlabel("Timestep")
@@ -150,15 +150,16 @@ def plot_timeseries(
             ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
 
         # Window-summary annotation
-        window = metrics[
-            (metrics["t"] >= t_start) & (metrics["t"] <= t_end)
-        ][spec.metric_column]
+        window = metrics[(metrics["t"] >= t_start) & (metrics["t"] <= t_end)][spec.metric_column]
         if len(window) > 0:
             stats = f"window mean={window.mean():.3g}   max={window.max():.3g}"
             ax.text(
-                0.99, 0.97, stats,
+                0.99,
+                0.97,
+                stats,
                 transform=ax.transAxes,
-                ha="right", va="top",
+                ha="right",
+                va="top",
                 fontsize=8.5,
                 color=PALETTE.annotation,
                 bbox=dict(
@@ -178,7 +179,8 @@ def plot_timeseries(
     return written
 
 
-# Wrappers for the four standard plots, which just call the core function 
+# Wrappers for the four standard plots, which just call the core function
+
 
 def plot_avg_degree(
     metrics: pd.DataFrame,
@@ -188,9 +190,7 @@ def plot_avg_degree(
     formats: OutputFormats = OutputFormats(),
 ) -> list[str]:
     """Plot average degree over time."""
-    return plot_timeseries(
-        metrics, SPEC_AVG_DEGREE, output_dir, t_start, t_end, formats
-    )
+    return plot_timeseries(metrics, SPEC_AVG_DEGREE, output_dir, t_start, t_end, formats)
 
 
 def plot_max_degree(
@@ -201,9 +201,7 @@ def plot_max_degree(
     formats: OutputFormats = OutputFormats(),
 ) -> list[str]:
     """Plot maximum degree (peak concurrent partners) over time."""
-    return plot_timeseries(
-        metrics, SPEC_MAX_DEGREE, output_dir, t_start, t_end, formats
-    )
+    return plot_timeseries(metrics, SPEC_MAX_DEGREE, output_dir, t_start, t_end, formats)
 
 
 def plot_transitivity(
@@ -214,9 +212,7 @@ def plot_transitivity(
     formats: OutputFormats = OutputFormats(),
 ) -> list[str]:
     """Plot global clustering (transitivity) over time."""
-    return plot_timeseries(
-        metrics, SPEC_TRANSITIVITY, output_dir, t_start, t_end, formats
-    )
+    return plot_timeseries(metrics, SPEC_TRANSITIVITY, output_dir, t_start, t_end, formats)
 
 
 def plot_avg_path_length(
@@ -227,6 +223,4 @@ def plot_avg_path_length(
     formats: OutputFormats = OutputFormats(),
 ) -> list[str]:
     """Plot average path length in the largest connected component."""
-    return plot_timeseries(
-        metrics, SPEC_AVG_PATH_LENGTH, output_dir, t_start, t_end, formats
-    )
+    return plot_timeseries(metrics, SPEC_AVG_PATH_LENGTH, output_dir, t_start, t_end, formats)

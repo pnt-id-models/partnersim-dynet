@@ -11,7 +11,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import pytest
-
+from dataclasses import FrozenInstanceError
 from partnersim_dynet.network.plots import (
     PALETTE,
     NetworkPalette,
@@ -41,8 +41,8 @@ class TestPalette:
         assert PALETTE.orientation_color("Unknown") == "#999999"
 
     def test_sex_shape_known(self):
-        assert PALETTE.sex_shape("Males") == "o"
-        assert PALETTE.sex_shape("Females") == "s"
+        assert PALETTE.sex_shape("Male") == "o"
+        assert PALETTE.sex_shape("Female") == "s"
 
     def test_metric_colors_distinct(self):
         """The four timeseries metrics should all have different colors."""

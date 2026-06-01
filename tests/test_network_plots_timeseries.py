@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from dataclasses import FrozenInstanceError
 
 from partnersim_dynet.network.plots import (
     OutputFormats,
@@ -36,20 +37,24 @@ from partnersim_dynet.network.plots import (
 
 # Helpers
 
+
 def _make_metrics_df(n_timesteps: int = 100) -> pd.DataFrame:
     """Build a synthetic metrics DataFrame with all the columns the plot
     functions might want."""
     rng = np.random.default_rng(0)
     t = np.arange(1, n_timesteps + 1)
-    return pd.DataFrame({
-        "t": t,
-        "avg_degree": rng.uniform(0.0, 2.0, size=n_timesteps),
-        "max_degree": rng.integers(0, 10, size=n_timesteps),
-        "transitivity": rng.uniform(0.0, 0.3, size=n_timesteps),
-        "avg_path_length": rng.uniform(1.0, 5.0, size=n_timesteps),
-        "num_nodes": np.full(n_timesteps, 100),
-        "num_edges": rng.integers(0, 50, size=n_timesteps),
-    })
+    return pd.DataFrame(
+        {
+            "t": t,
+            "avg_degree": rng.uniform(0.0, 2.0, size=n_timesteps),
+            "max_degree": rng.integers(0, 10, size=n_timesteps),
+            "transitivity": rng.uniform(0.0, 0.3, size=n_timesteps),
+            "avg_path_length": rng.uniform(1.0, 5.0, size=n_timesteps),
+            "num_nodes": np.full(n_timesteps, 100),
+            "num_edges": rng.integers(0, 50, size=n_timesteps),
+        }
+    )
+
 
 # TimeseriesSpec
 class TestTimeseriesSpec:
@@ -90,7 +95,9 @@ class TestPlotTimeseries:
     def test_writes_all_formats(self, tmp_path):
         metrics = _make_metrics_df()
         written = plot_timeseries(
-            metrics, SPEC_AVG_DEGREE, str(tmp_path),
+            metrics,
+            SPEC_AVG_DEGREE,
+            str(tmp_path),
             formats=OutputFormats.all_enabled(),
         )
         assert len(written) == 3
@@ -111,8 +118,11 @@ class TestPlotTimeseries:
         """A narrower window should still produce a valid plot file."""
         metrics = _make_metrics_df()
         written = plot_timeseries(
-            metrics, SPEC_AVG_DEGREE, str(tmp_path),
-            t_start=20, t_end=80,
+            metrics,
+            SPEC_AVG_DEGREE,
+            str(tmp_path),
+            t_start=20,
+            t_end=80,
         )
         assert os.path.exists(written[0])
 
@@ -121,8 +131,11 @@ class TestPlotTimeseries:
         timestep without crashing."""
         metrics = _make_metrics_df()
         written = plot_timeseries(
-            metrics, SPEC_AVG_DEGREE, str(tmp_path),
-            t_start=1, t_end=None,
+            metrics,
+            SPEC_AVG_DEGREE,
+            str(tmp_path),
+            t_start=1,
+            t_end=None,
         )
         assert os.path.exists(written[0])
 
@@ -137,13 +150,14 @@ class TestPlotTimeseries:
 
 # Convenience wrappers
 
+
 class TestConvenienceWrappers:
     @pytest.mark.parametrize(
         "fn, expected_stem",
         [
-            (plot_avg_degree,      "avg_degree_over_time"),
-            (plot_max_degree,      "max_degree_over_time"),
-            (plot_transitivity,    "transitivity_over_time"),
+            (plot_avg_degree, "avg_degree_over_time"),
+            (plot_max_degree, "max_degree_over_time"),
+            (plot_transitivity, "transitivity_over_time"),
             (plot_avg_path_length, "avg_path_length_over_time"),
         ],
     )
@@ -169,8 +183,7 @@ class TestNoGlobalPollution:
         assert plt.rcParams["axes.spines.top"] == original_spines
 
 
-
-# Integration with generator 
+# Integration with generator
 class TestIntegrationWithRealMetrics:
     def test_runs_against_real_metrics_output(self, tmp_path):
         """End-to-end: simulate, compute metrics, plot all four."""
@@ -185,13 +198,10 @@ class TestIntegrationWithRealMetrics:
         cfg = PartnershipConfig(num_agents=200, total_timesteps=200)
         gen = PartnershipGenerator(cfg, seed=42)
         df = gen.simulate_partnerships()
-        active = ActiveIntervals.from_agent_log(
-            gen.get_agent_log(), total_timesteps=200
-        )
+        active = ActiveIntervals.from_agent_log(gen.get_agent_log(), total_timesteps=200)
         arr = prepare_partnerships(df, total_timesteps=200)
         metrics = compute_temporal_metrics(arr, active, total_timesteps=200)
 
-        for plot_fn in (plot_avg_degree, plot_max_degree,
-                        plot_transitivity, plot_avg_path_length):
+        for plot_fn in (plot_avg_degree, plot_max_degree, plot_transitivity, plot_avg_path_length):
             written = plot_fn(metrics, str(tmp_path))
             assert all(os.path.exists(p) for p in written)
