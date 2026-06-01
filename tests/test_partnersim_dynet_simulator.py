@@ -1,4 +1,4 @@
-"""Tests for the orchestrator: run_single and run_replicates."""
+"""Tests for the simulator: run_single and run_replicates."""
 
 from __future__ import annotations
 
