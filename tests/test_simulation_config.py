@@ -130,3 +130,20 @@ class TestSimulationConfigValidation:
     def test_zero_workers_rejected(self):
         with pytest.raises(ValueError, match="n_workers"):
             SimulationConfig(n_workers=0)
+
+
+class TestSimulationConfigFlags:
+    """The new analysis flags."""
+
+    def test_all_flags_default_false(self):
+        cfg = SimulationConfig()
+        assert cfg.run_metrics is False
+        assert cfg.run_degree_distributions is False
+        assert cfg.run_plots is False
+        assert cfg.run_diagnostics is False
+
+    def test_flags_are_independently_settable(self):
+        cfg = SimulationConfig(run_metrics=True, run_plots=True)
+        assert cfg.run_metrics is True
+        assert cfg.run_plots is True
+        assert cfg.run_diagnostics is False

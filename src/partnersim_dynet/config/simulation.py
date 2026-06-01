@@ -4,6 +4,10 @@
 duration, concurrency settings. `SimulationConfig` wraps it for
 multi-replicate experiments with deterministic seed derivation.
 
+All flags default to safe-fast values: partnership simulation always
+    runs, optional analyses default off. Enable per-experiment via the
+    boolean flags below.
+
 """
 
 from __future__ import annotations
@@ -204,6 +208,12 @@ class SimulationConfig:
     verbose: bool = False
 
     n_workers: int = 1
+
+    # ── Analysis flags (default off for fast runs)
+    run_metrics: bool = False
+    run_degree_distributions: bool = False
+    run_plots: bool = False
+    run_diagnostics: bool = False
 
     def __post_init__(self) -> None:
         if self.n_partnership_replicates <= 0:
