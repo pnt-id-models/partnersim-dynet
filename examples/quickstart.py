@@ -20,9 +20,9 @@ from partnersim_dynet.config import PartnershipConfig
 
 def main() -> None:
     cfg = PartnershipConfig(
-        num_agents=500,
-        total_timesteps=500,
-        concurrency_prop=0.10,
+        num_agents=15000,
+        total_timesteps=1875,
+        concurrency_prop=0.15,
         concurrency_model=1,
     )
 

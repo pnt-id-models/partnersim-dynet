@@ -80,7 +80,7 @@ class ProbabilityConfig:
     """
 
     formation_base: float = 0.002
-    breakage_base: float = 0.002
+    breakage_base: float = 0.004
 
     sex_multipliers: dict[str, float] = field(default_factory=_default_sex_multipliers)
     orient_multipliers_form: dict[str, dict[str, float]] = field(
