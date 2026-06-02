@@ -339,25 +339,54 @@ class PartnershipGenerator:
 
         Returns an array of shape (capacity,), with the per-agent base
         breakage probability filled in for active slots and 0 elsewhere.
-        Used by the vectorized breakage phases.
+
+        Pre-build a flat lookup table once (4 ori × 2 sex × 6
+        age groups), then use NumPy fancy indexing to pull the right base
+        for every agent in one operation. Apply the NB multiplier and
+        high-activity boost (if enabled) vectorised, then clip.
+
         """
         breakage_probs = np.zeros(self.capacity, dtype=np.float64)
-        for idx in active_idx:
-            sc = int(self.sex_arr[idx])
-            oc = int(self.ori_arr[idx])
-            age_group = _AGE_GROUP_LABELS_FOR_NUMBA[age_group_codes_arr[idx]]
-            key = (sc, oc, age_group)
-            base = self._breakage_base_cache.get(key)
-            if base is None:
-                sex_str = SEX_CODE_TO_STR[sc]
-                ori_str = ORI_CODE_TO_STR[oc]
-                base = self._breakage_probs[sex_str][ori_str].get(age_group, 0.0)
-                self._breakage_base_cache[key] = base
+        if active_idx.size == 0:
+            return breakage_probs
 
-            prob = base * self.nb_mult_break[idx]
-            if self.high_active_arr[idx]:
-                prob *= self.cfg.high_activity_multiplier
-            breakage_probs[idx] = max(self.cfg.prob_floor, min(prob, self.cfg.prob_ceiling))
+        # Compose a per-agent index into a flat (sex, ori, age_group) table
+        sex_codes = self.sex_arr[active_idx]
+        ori_codes = self.ori_arr[active_idx]
+        age_codes = age_group_codes_arr[active_idx]
+        if not hasattr(self, "_breakage_base_table"):
+            n_age = len(_AGE_GROUP_LABELS_FOR_NUMBA)  # 8 = 6 groups + "75" + "Unknown"
+            table = np.zeros((n_age, 2, 3), dtype=np.float64)
+            for age_code in range(n_age):
+                age_label = _AGE_GROUP_LABELS_FOR_NUMBA[age_code]
+                for sc in (0, 1):
+                    for oc in (0, 1, 2):
+                        sex_str = SEX_CODE_TO_STR[sc]
+                        ori_str = ORI_CODE_TO_STR[oc]
+                        table[age_code, sc, oc] = self._breakage_probs[sex_str][ori_str].get(
+                            str(age_label), 0.0
+                        )
+            self._breakage_base_table = table
+        # Fancy-index into the table: one base per active agent
+        base_per_agent = self._breakage_base_table[age_codes, sex_codes, ori_codes]
+
+        # Apply per-agent NB multiplier
+        eff = base_per_agent * self.nb_mult_break[active_idx]
+
+        # Apply high-activity boost where applicable
+        high_active_mask = self.high_active_arr[active_idx]
+        if high_active_mask.any():
+            eff = np.where(
+                high_active_mask,
+                eff * self.cfg.high_activity_multiplier,
+                eff,
+            )
+
+        # Clip to [prob_floor, prob_ceiling]
+        eff = np.clip(eff, self.cfg.prob_floor, self.cfg.prob_ceiling)
+
+        # Write back into the capacity-sized output array
+        breakage_probs[active_idx] = eff
         return breakage_probs
 
     # Agent log management
