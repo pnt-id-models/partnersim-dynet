@@ -42,3 +42,5 @@ results/
 .ipynb_checkpoints/
 *.ipynb
 examples/output/
+deploy_key
+deploy_key.pub
