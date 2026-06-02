@@ -125,10 +125,12 @@ class TestPartnershipDynamics:
         real = partnerships[partnerships["RelationshipType"] != "None"]
         assert len(real) > 0
 
-    def test_partnerships_have_positive_duration(self, integration_run):
+    def test_partnerships_have_non_negative_duration(self, integration_run):
+        # Partnerships that form in the final timestep have Duration == 0
+        # (censored before any time elapses).
         _, partnerships, _ = integration_run
         real = partnerships[partnerships["RelationshipType"] != "None"]
-        assert (real["Duration"] > 0).all()
+        assert (real["Duration"] >= 0).all()
 
     def test_partnerships_have_consistent_start_end(self, integration_run):
         _, partnerships, _ = integration_run
