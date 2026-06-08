@@ -74,7 +74,6 @@ class NetworkPalette:
 # read-only (the frozen=True enforces that).
 PALETTE = NetworkPalette()
 
-
 # Formatting for publication-quality plots
 
 

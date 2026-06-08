@@ -82,7 +82,6 @@ SPEC_AVG_PATH_LENGTH = TimeseriesSpec(
     color=PALETTE.avg_path_length,
 )
 
-
 # Core plotting function
 
 

@@ -76,6 +76,16 @@ def _attach_demographics(
 # Per-graph metric functions
 
 
+def triangles(G: nx.Graph) -> int:
+    """Count of triangles in the graph."""
+    return sum(nx.triangles(G).values()) // 3
+
+
+def clusters(G: nx.Graph) -> int:
+    """Count of triads (connected triples) in the graph."""
+    return sum(nx.clustering(G).values()) // 3
+
+
 def degree_stats(G: nx.Graph) -> tuple[float, int, int]:
     """Return (avg_degree, max_degree, n_active_nodes).
 
