@@ -119,19 +119,6 @@ def main() -> None:
         f"  poetry run python -c \"import pstats; pstats.Stats('{profile_path}').sort_stats('cumulative').print_stats(50)\""
     )
 
-    # # Save profile to disk for follow-up analysis
-    # output_dir = Path(__file__).parent / "output"
-    # output_dir.mkdir(parents=True, exist_ok=True)
-    # label = f"conc{args.concurrency_prop}" if args.concurrency_prop > 0 else "noconc"
-    # profile_path = output_dir / f"profile_n{args.num_agents}_t{args.total_timesteps}_{label}.prof"
-    # profiler.dump_stats(str(profile_path))
-    # print(f"Profile saved to: {profile_path}")
-    # print()
-    # print("To inspect interactively:")
-    # print(
-    #     f"  poetry run python -c \"import pstats; pstats.Stats('{profile_path}').sort_stats('cumulative').print_stats(50)\""
-    # )
-
 
 if __name__ == "__main__":
     main()
