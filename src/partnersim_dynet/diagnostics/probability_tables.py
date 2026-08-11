@@ -1,14 +1,17 @@
 """Probability table inspection — base rates and effective bounds.
 
 1. ``print_probability_table`` / ``save_probability_table``: the
-   calibrated base probabilities from a ProbabilityConfig, formatted as
-   a human-readable table. These are population-average values,
-   independent of any specific agent's NB multiplier.
+calibrated base probabilities from a ProbabilityConfig, formatted as
+a csv file. These are population-average values, independent of
+any specific agent's NB multiplier.
 
 2. ``export_probability_bounds`` / ``export_probability_bounds_csv``:
-   the EFFECTIVE per-(AgeGroup, Sex, Orientation) bounds after
-   accounting for agent-specific NB multipliers from a real simulation
-   run. Tells you the actual range of probabilities agents experienced.
+the EFFECTIVE per-(AgeGroup, Sex, Orientation) bounds after
+accounting for agent-specific NB multipliers from a simulation
+run. Tells you the actual range of probabilities agents were assigned,
+which can be substantially different from the base rates due to the
+NB multiplier. The min/max values are computed across all agents in
+that demographic, and clipped to the configured [prob_floor, prob_ceiling]
 
 """
 
@@ -21,7 +24,8 @@ import pandas as pd
 
 from partnersim_dynet.config import AGE_GROUPS, PartnershipConfig
 
-# Base probability tables (from config)
+# Base probability tables from the config which is derived post the application of multipliers,
+# without any per-agent heterogeneity applied.
 
 
 def print_probability_table(
@@ -32,7 +36,7 @@ def print_probability_table(
 
     Uses the base tables from ``cfg.probabilities``
     No per-agent heterogeneity is applied at this stage. Useful for sanity-checking that the
-    multiplicative model produced the expected rates
+    multiplicative (by sex-orientation and age-group) model produced the expected rates
 
     Parameters
     ----------
@@ -45,7 +49,7 @@ def print_probability_table(
     breakage = cfg.probabilities.build_breakage_probs() if include_breakage else None
 
     print("\n" + "=" * 64)
-    print("Calibrated probabilities (base rates, no agent heterogeneity)")
+    print("Probabilities without base rates, no agent heterogeneity")
     print("=" * 64)
 
     for sex in formation:
@@ -67,6 +71,8 @@ def print_probability_table(
                     print(f"    {age:<13} | {f:>14.5f}")
 
 
+# Probability tables with per-agent heterogeneity applied, computed from a simulation run.
+# The min/max values are computed across all agents in that demographic, and clipped to the configured [prob_floor, prob_ceiling]
 def save_probability_table(cfg: PartnershipConfig, output_path: str) -> str:
     """Save the calibrated probability tables to CSV.
 
@@ -109,9 +115,7 @@ def save_probability_table(cfg: PartnershipConfig, output_path: str) -> str:
     return output_path
 
 
-# Effective probability bounds (from real simulation)
-
-
+# Effective probability bounds from the simulation run, accounting for per-agent heterogeneity. The min/max values are computed across all agents in that demographic, and clipped to the configured [prob_floor, prob_ceiling]
 def export_probability_bounds(
     cfg: PartnershipConfig,
     agent_log: pd.DataFrame,
@@ -158,6 +162,8 @@ def export_probability_bounds(
         "NBMultiplierBreak",
         "HighActive",
     }
+
+    # Check that the agent_log contains all required columns
     missing = required - set(agent_log.columns)
     if missing:
         raise KeyError(f"agent_log missing columns: {sorted(missing)}")
@@ -190,7 +196,7 @@ def export_probability_bounds(
         Breakage_Effective_Max=("Breakage_Effective", "max"),
     )
 
-    # Attach base rates separately (constant per combo)
+    # Attach base rates separately
     grouped["Formation_Base"] = grouped.apply(
         lambda r: formation.get(r["Sex"], {}).get(r["Orientation"], {}).get(r["AgeGroup"], 0.0),
         axis=1,
@@ -217,6 +223,7 @@ def export_probability_bounds(
     ]
 
 
+# Export effective probability bounds to CSV in one call
 def export_probability_bounds_csv(
     cfg: PartnershipConfig,
     agent_log: pd.DataFrame,

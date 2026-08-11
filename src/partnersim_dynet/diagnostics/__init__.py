@@ -1,8 +1,8 @@
-"""Diagnostic tools for inspecting probability calibration.
+"""Diagnostic tools for inspecting probability distributions.
 
 Tools to verify that PartnershipConfig produced the
-calibration, and inspect the actual range of effective
-probabilities agents experienced in a real run.
+expected probability distributions, and inspect the actual range of
+effective probabilities agents experienced in the simulation run.
 """
 
 from partnersim_dynet.diagnostics.agent_distributions import (

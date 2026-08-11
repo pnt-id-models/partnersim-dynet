@@ -1,7 +1,7 @@
 """Boxplot diagnostic for per-agent effective formation/breakage probabilities.
 
 Produces one figure per (Sex, Orientation) combination — six figures in
-total — each showing a 2-row × 6-column grid: rows are Formation /
+total each showing a 2-row × 6-column grid: rows are Formation /
 Breakage, columns are age groups. Each cell is a boxplot of per-agent
 effective probabilities for the agents in that combo, with a strip plot
 overlay.
@@ -9,8 +9,8 @@ overlay.
 The boxplots reveal heterogeneity: a wide box means agents in that
 demographic experienced a wide spread of effective probabilities (driven
 by the NB multiplier). A narrow box means everyone got similar rates.
-This is the diagnostic for "did my NB heterogeneity calibration produce
-the dispersion I wanted?".
+This is the diagnostic for "did my NB multiplier for individual
+heterogeneity produce the dispersion I wanted?".
 """
 
 from __future__ import annotations
@@ -29,6 +29,9 @@ from partnersim_dynet.network.plots.style import OutputFormats, publication_styl
 _SEX_LABEL = {"Male": "Male", "Female": "Female"}
 
 
+# This function is a diagnostic for the per-agent effective probabilities, which are computed
+# for each agent based on their age, sex, orientation, and the negative-binomial multiplier.
+# The function generates boxplots for each combination of sex and orientation
 def plot_agent_probability_distributions(
     cfg: PartnershipConfig,
     agent_log: pd.DataFrame,
@@ -60,9 +63,9 @@ def plot_agent_probability_distributions(
     -------
     list of file paths written.
     """
-    # Reuse export_probability_bounds machinery to get per-agent effective probs.
+    # Reuse export_probability_bounds mechanism to get per-agent effective probs.
     # We need the per-agent values, not just the per-combo summary, so we
-    # do the calculation inline here (mirroring export_probability_bounds).
+    # do the calculation here similar to the export_probability_bounds.
     from partnersim_dynet.config import age_to_group
 
     formation = cfg.probabilities.build_formation_probs()
@@ -84,8 +87,8 @@ def plot_agent_probability_distributions(
     sexes = ("Male", "Female")
     orientations = ("Opposite-sex", "Same-sex", "Bisexual")
 
-    # Per (sex, orientation, outcome) y-axis limits — keeps the visual
-    # scale meaningful within each figure.
+    # Per (sex, orientation, outcome) y-axis limits keeps the visual scale consistent for each plot.
+    # We compute the min/max across all age groups for that combo, then pad by 5% of the range in the plot.
     y_limits: dict = {}
     for sex in sexes:
         y_limits[sex] = {}
@@ -105,6 +108,8 @@ def plot_agent_probability_distributions(
 
     written: list[str] = []
 
+    # Plotting loop: for each (sex, orientation) combination, generate a 2×6 grid of boxplots for Formation and Breakage across age groups.
+    # The boxplots show the distribution of effective probabilities for agents in that demographic, revealing heterogeneity within an individual group.
     for sex in sexes:
         for ori in orientations:
             df_sub = df[(df["Sex"] == sex) & (df["Orientation"] == ori)].copy()
