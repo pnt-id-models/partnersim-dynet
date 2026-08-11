@@ -18,7 +18,7 @@ from partnersim_dynet.config import PartnershipConfig, SimulationConfig
 
 
 def _tiny_cfg() -> PartnershipConfig:
-    return PartnershipConfig(num_agents=80, total_timesteps=60)
+    return PartnershipConfig(num_agents=80, total_timesteps=200)
 
 
 # run_single: default (no analysis)
@@ -64,7 +64,7 @@ class TestRunSingleWithAnalysis:
         # Quick sanity check on the metrics DataFrame
         m = pd.read_parquet(tmp_path / "metrics.parquet")
         assert "avg_degree" in m.columns
-        assert len(m) == 60
+        assert len(m) == 200
 
     def test_run_degree_distributions(self, tmp_path):
         run_single(

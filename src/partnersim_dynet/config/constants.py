@@ -1,7 +1,6 @@
 """Package-wide constants.
 
-The source file for age groups, sex codes, orientation codes, and
-related mappings. Every other module imports from here.
+The source file for age groups, sex codes, orientation codes, and related mappings.
 """
 
 from __future__ import annotations
@@ -9,7 +8,8 @@ from __future__ import annotations
 """
 Age groups are used for age-based decay in formation probabilities, and for demographic structure in the partnership network.
 The age-to-group mapping is defined by AGE_GROUP_BOUNDARIES and the age_to_group() function.
-Inclusive age boundaries: an agent of age `a` belongs to group `label` if lo <= a <= hi. The "75+" group is the removal boundary — agents are removed from the simulation when they turn MAX_AGE.
+Inclusive age boundaries: an agent of age `a` belongs to group `label` if lo <= a <= hi.
+The "75+" group is the removal boundary — agents are removed from the simulation when they turn MAX_AGE.
 """
 
 AGE_GROUP_BOUNDARIES: tuple[tuple[str, int, int], ...] = (
@@ -21,18 +21,20 @@ AGE_GROUP_BOUNDARIES: tuple[tuple[str, int, int], ...] = (
     ("65-74", 65, 74),
 )
 
+# Age group labels, in order of increasing age. Used for plotting and table output.
 AGE_GROUPS: tuple[str, ...] = tuple(label for label, _, _ in AGE_GROUP_BOUNDARIES)
 
-MIN_AGE: int = 16
+MIN_AGE: int = 16  # Minimum age of agents in the simulation (agents below this age are not included in the population).
 MAX_AGE: int = 74  # agents are removed when they exceed this
 REPLENISHMENT_AGE: int = 16  # new agents enter the simulation at this age
 
 
+# Sexual debut probabilities by age. Agents below age 16 are not in the population; agents at age 21+ are guaranteed to be sexually active.
 def age_to_group(age: int) -> str:
     """Map a numeric age to its age group label.
 
-    Returns "Unknown" for ages outside the defined boundaries (e.g. below
-    MIN_AGE or above MAX_AGE).  There should be no such agents in the simulation but this is a fallback to prevent crashes if the function is assigns an invalid age.
+    Returns "Unknown" for ages outside the defined boundaries (e.g. below MIN_AGE or above MAX_AGE).
+    There should be no such agents in the simulation but this is a fallback to prevent crashes if the function is assigns an invalid age.
     """
     for label, lo, hi in AGE_GROUP_BOUNDARIES:
         if lo <= age <= hi:
@@ -40,14 +42,14 @@ def age_to_group(age: int) -> str:
     return "Unknown"
 
 
-# Sex codes
+# Sex codes for internal representation. Used in the network and agent logs. Mapped to strings for output.
 
 # Internal representation uses int8 for memory efficiency; string forms are used in output DataFrames and plot labels.
 SEX_CODE_TO_STR: dict[int, str] = {0: "Male", 1: "Female"}
 SEX_STR_TO_CODE: dict[str, int] = {v: k for k, v in SEX_CODE_TO_STR.items()}
 
 
-# Orientation codes
+# Orientation codes for internal representation. Used in the network and agent logs. Mapped to strings for output.
 # Internal representation uses int8 for memory efficiency; string forms are used in output DataFrames and plot labels.
 
 ORI_CODE_TO_STR: dict[int, str] = {
@@ -62,10 +64,9 @@ ORI_STR_TO_CODE: dict[str, int] = {v: k for k, v in ORI_CODE_TO_STR.items()}
 """
 These describe the demographic structure of the population: how many of each sex,
 how orientations are distributed within each sex, and at what age people enter sexual activity.
-
-They are constants — not config — because they are not expected to vary betweeen experiments.
-
-If a future experiment needs to vary them to depict a particular population, then they can be promoted to config parameters.
+They are constants because they are not expected to vary betweeen experiments and the distribution
+is consistent with the population characteristics from the NATSAL-3 survey data.
+To model a different population, these values can be changed in the source code.
 """
 
 PROPORTION_MALE: float = 0.5

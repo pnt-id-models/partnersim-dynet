@@ -730,7 +730,7 @@ class PartnershipGenerator:
                 formation_prob = self._formation_prob(
                     sc, oc, str(age_group), idx=agent_idx_internal
                 )
-                if self._rng.random() >= formation_prob:
+                if self._rng.random() <= formation_prob:
                     continue
 
                 # Remove self from the candidate pool for this draw.

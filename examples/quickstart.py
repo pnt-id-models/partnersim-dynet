@@ -20,13 +20,13 @@ from partnersim_dynet.config import PartnershipConfig
 
 def main() -> None:
     cfg = PartnershipConfig(
-        num_agents=15000,
+        num_agents=1500,
         total_timesteps=1875,
-        concurrency_prop=0.15,
+        concurrency_prop=0.00,
         concurrency_model=1,
     )
 
-    output_dir = Path(__file__).parent / "output" / "quickstart"
+    output_dir = Path(__file__).parent / "output_0pcconcurrency_June24_test3" / "quickstart"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Running simulation: {cfg.num_agents} agents × {cfg.total_timesteps} timesteps")

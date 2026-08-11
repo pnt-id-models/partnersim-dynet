@@ -47,15 +47,14 @@ class TestPalette:
         assert PALETTE.sex_shape("Male") == "o"
         assert PALETTE.sex_shape("Female") == "s"
 
-    def test_metric_colors_distinct(self):
-        """The four timeseries metrics should all have different colors."""
-        colors = [
-            PALETTE.avg_degree,
-            PALETTE.max_degree,
-            PALETTE.transitivity,
-            PALETTE.avg_path_length,
-        ]
-        assert len(set(colors)) == 4
+    def test_metric_colors_unified(self):
+        """All time-series metric colours point at the unified navy
+        line colour."""
+        palette = NetworkPalette()
+        assert palette.avg_degree == palette.timeseries_line
+        assert palette.max_degree == palette.timeseries_line
+        assert palette.transitivity == palette.timeseries_line
+        assert palette.avg_path_length == palette.timeseries_line
 
 
 # publication_style context manager

@@ -12,14 +12,13 @@ Design
 ------
 - Components are tracked event-by-event using a counter of edges.
   Graph is not rebuilt from scratch each timestep, instead we apply the start/end events for that step.
-- APL uses sampled BFS from a random sample of LCC nodes. Each source's
+- Uses sampled Breadth-First Search from a random sample of LCC nodes. Each source's
   mean distance to others is computed, then averaged across sources.
-- Clustering uses transitivity (3 * triangles / triads), not the per-node
-  average.
 """
 
 from __future__ import annotations
 
+import os
 from collections import Counter, defaultdict
 
 import networkx as nx
@@ -76,31 +75,48 @@ def _attach_demographics(
 # Per-graph metric functions
 
 
-def triangles(G: nx.Graph) -> int:
-    """Count of triangles in the graph."""
-    return sum(nx.triangles(G).values()) // 3
-
-
-def clusters(G: nx.Graph) -> int:
-    """Count of triads (connected triples) in the graph."""
-    return sum(nx.clustering(G).values()) // 3
-
-
-def degree_stats(G: nx.Graph) -> tuple[float, int, int]:
-    """Return (avg_degree, max_degree, n_active_nodes).
+def degree_stats(G: nx.Graph) -> tuple[float, int, int, float]:
+    """Return (avg_degree, max_degree, n_active_nodes, median_degree).
 
     avg_degree is mean over all nodes (including isolates).
     n_active_nodes is the count of nodes with degree >= 1.
+    median_degree is the median degree across all nodes.
     """
     n = G.number_of_nodes()
     if n == 0:
-        return 0.0, 0, 0
+        return 0.0, 0, 0, 0.0
     degs = dict(G.degree())
     deg_values = list(degs.values())
     avg = sum(deg_values) / n
     mx = max(deg_values) if deg_values else 0
     active = sum(1 for d in deg_values if d > 0)
-    return avg, mx, active
+    med = float(np.median(deg_values))
+    return avg, mx, active, med
+
+
+def degree_stats_concurrent(G: nx.Graph) -> tuple[float | None, float | None, int]:
+    """Mean/median degree among concurrent agents only (degree >= 2).
+
+    Returns (mean, median, n_concurrent). mean/median are None if no
+    agent currently holds 2+ simultaneous partners (e.g. true 0%
+    concurrency scenarios).
+    """
+    concurrent_degs = [d for _, d in G.degree() if d >= 2]
+    if not concurrent_degs:
+        return None, None, 0
+    return float(np.mean(concurrent_degs)), float(np.median(concurrent_degs)), len(concurrent_degs)
+
+
+def degree_stats_monogamous(G: nx.Graph) -> tuple[float | None, float | None, int]:
+    """Mean/median degree among monogamous agents only (degree == 1).
+
+    Returns (mean, median, n_monogamous). mean/median are None if no
+    agent currently has exactly one simultaneous partner.
+    """
+    monogamous_degs = [d for _, d in G.degree() if d == 1]
+    if not monogamous_degs:
+        return None, None, 0
+    return float(np.mean(monogamous_degs)), float(np.median(monogamous_degs)), len(monogamous_degs)
 
 
 def component_stats(G: nx.Graph) -> tuple[int, int, float]:
@@ -124,45 +140,75 @@ def transitivity(G: nx.Graph) -> float:
     return nx.transitivity(G)
 
 
-def sampled_avg_path_length(G: nx.Graph, sample_size: int, rng: np.random.Generator) -> float:
-    """True mean pairwise shortest-path length in the LCC, sampled.
+def density(G: nx.Graph) -> float:
+    """Fraction of possible edges that are realised: 2|E| / (n(n-1))."""
+    n = G.number_of_nodes()
+    if n < 2:
+        return 0.0
+    return (2.0 * G.number_of_edges()) / (n * (n - 1))
 
-    Algorithm:
-    1. Find the largest connected component (LCC).
-    2. Sample up to `sample_size` source nodes uniformly from the LCC.
-    3. For each source, compute mean distance to all other LCC nodes.
-    4. Return the average of those per-source means.
 
-    Returns 0.0 if the graph has no edges or the LCC is a single node.
+def weighted_avg_path_length(
+    G: nx.Graph,
+    sample_size: int,
+    rng: np.random.Generator,
+) -> float:
+    """Average shortest path length across all components, size-weighted.
+
+    For each connected component:
+    - Size 1: contributes 0 (no path)
+    - Size 2: contributes 1 (trivial)
+    - Size 3-5: exact APL (cheap, deterministic)
+    - Size >5: sampled APL using ``sample_size`` sources
+
+    Returns the size-weighted mean across all components. Weights are
+    the number of pairs per component (size choose 2), so larger
+    components dominate. Returns 0.0 if the graph has no edges.
+
+    Useful as a complement to ``sampled_avg_path_length`` (which only
+    looks at the largest component): this metric tells you about
+    typical connectivity across the whole network, not just the
+    biggest connected piece.
     """
     if G.number_of_edges() == 0:
         return 0.0
+
     comps = list(nx.connected_components(G))
     if not comps:
         return 0.0
 
-    lcc_nodes = max(comps, key=len)
-    if len(lcc_nodes) <= 1:
-        return 0.0
+    total_weighted_sum = 0.0
+    total_pairs = 0
 
-    lcc = G.subgraph(lcc_nodes)
-    k = min(sample_size, len(lcc_nodes))
-    sources = rng.choice(list(lcc_nodes), size=k, replace=False)
+    for comp_nodes in comps:
+        n = len(comp_nodes)
+        if n < 2:
+            continue  # Singletons have no path
+        comp_pairs = n * (n - 1) // 2
 
-    source_means: list[float] = []
-    for src in sources:
-        sp = nx.single_source_shortest_path_length(lcc, int(src))
-        # Distances to other nodes (skip the source itself, which is 0)
-        others = [v for v in sp.values() if v > 0]
-        if others:
-            source_means.append(float(np.mean(others)))
+        subg = G.subgraph(comp_nodes)
+        if n <= 5:
+            # Exact APL: cheap and deterministic
+            comp_apl = float(nx.average_shortest_path_length(subg))
+        else:
+            # Sampled APL using same approach as sampled_avg_path_length
+            k = min(sample_size, n)
+            sources = rng.choice(list(comp_nodes), size=k, replace=False)
+            source_means: list[float] = []
+            for src in sources:
+                sp = nx.single_source_shortest_path_length(subg, int(src))
+                others = [v for v in sp.values() if v > 0]
+                if others:
+                    source_means.append(float(np.mean(others)))
+            comp_apl = float(np.mean(source_means)) if source_means else 0.0
 
-    return float(np.mean(source_means)) if source_means else 0.0
+        total_weighted_sum += comp_apl * comp_pairs
+        total_pairs += comp_pairs
+
+    return total_weighted_sum / total_pairs if total_pairs > 0 else 0.0
 
 
 # Main driver: time series of metrics
-
-
 def compute_temporal_metrics(
     partnerships: PartnershipArrays,
     active: ActiveIntervals,
@@ -211,12 +257,14 @@ def compute_temporal_metrics(
 
     # Index events by timestep for fast per-step processing
     events_by_t = _bucket_events_by_t(partnerships)
+    PATH_LENGTH_STRIDE = 10
 
     metrics: dict[str, list] = defaultdict(list)
 
     for t in range(1, total_timesteps + 1):
         # ── (1) Process end events at this timestep ─────────────────
         # Ends come before starts at the same t (see iter_partnership_events).
+
         step_lost = 0
         for ev in events_by_t.get(t, []):
             if ev.kind != "end":
@@ -261,9 +309,14 @@ def compute_temporal_metrics(
             edge_mult[key] += 1
 
         # ── (4) Compute per-step metrics ────────────────────────────
-        avg_deg, max_deg, n_active = degree_stats(G)
+        avg_deg, max_deg, n_active, med_deg = degree_stats(G)
         n_comp, lcc_size, mean_comp = component_stats(G)
-
+        mean_c, median_c, n_c = degree_stats_concurrent(G)
+        mean_m, median_m, n_m = degree_stats_monogamous(G)
+        if t % PATH_LENGTH_STRIDE == 0:
+            apl_w = weighted_avg_path_length(G, apl_sample_size, rng)
+        else:
+            apl_w = np.nan
         metrics["t"].append(t)
         metrics["num_nodes"].append(G.number_of_nodes())
         metrics["num_edges"].append(G.number_of_edges())
@@ -276,12 +329,19 @@ def compute_temporal_metrics(
         metrics["largest_component_size"].append(lcc_size)
         metrics["mean_component_size"].append(mean_comp)
         metrics["transitivity"].append(transitivity(G))
-        metrics["avg_path_length"].append(sampled_avg_path_length(G, apl_sample_size, rng))
+        metrics["avg_path_length_weighted"].append(apl_w)
+        metrics["density"].append(density(G))
+        metrics["median_degree"].append(med_deg)
+        metrics["mean_degree_concurrent"].append(mean_c)
+        metrics["median_degree_concurrent"].append(median_c)
+        metrics["n_concurrent"].append(n_c)
+        metrics["mean_degree_monogamous"].append(mean_m)
+        metrics["median_degree_monogamous"].append(median_m)
+        metrics["n_monogamous"].append(n_m)
 
     return pd.DataFrame(metrics)
 
 
-# Add after compute_temporal_metrics
 def degree_at_snapshots(
     snapshot_times: list[int],
     partnerships: PartnershipArrays,
@@ -311,7 +371,7 @@ def degree_at_snapshots(
     Returns
     -------
     DataFrame with columns:
-        t, Agent, Degree, AgentSex, AgentOrientation, AgentAge, AgentAgeGroup
+        t, Agent, Degree, median_degree, AgentSex, AgentOrientation, AgentAge, AgentAgeGroup
 
     Notes
     -----
@@ -586,3 +646,82 @@ def _bucket_events_by_t(
     for ev in iter_partnership_events(partnerships):
         buckets[ev.t].append(ev)
     return buckets
+
+
+def steady_state_summary_table(
+    metrics_df: pd.DataFrame,
+    output_dir: str,
+    filename_stem: str = "summary_table",
+    g_agg: nx.Graph | None = None,
+    top_n_hub: int = 30,
+    write_tex: bool = True,
+) -> list[str]:
+    """Write a one-row publication summary table (csv + optional tex).
+
+    Collapses the steady-state window of `metrics_df` (same window used
+    by the timeseries plots' stats boxes) into scalar mean/SD stats.
+    """
+    from partnersim_dynet.network.plots.timeseries import _steady_state_mask
+
+    mask, *_ = _steady_state_mask(metrics_df)
+    w = metrics_df.loc[mask]
+
+    def _mstat(col):
+        s = w[col].dropna()
+        return (float(s.mean()), float(s.std())) if len(s) else (np.nan, np.nan)
+
+    row: dict = {}
+    for col, label in [
+        ("avg_degree", "mean_degree"),
+        ("median_degree", "median_degree"),
+        ("max_degree", "max_degree"),
+        ("mean_degree_concurrent", "mean_degree_concurrent"),
+        ("median_degree_concurrent", "median_degree_concurrent"),
+        ("n_concurrent", "n_concurrent"),
+        ("mean_degree_monogamous", "mean_degree_monogamous"),
+        ("median_degree_monogamous", "median_degree_monogamous"),
+        ("n_monogamous", "n_monogamous"),
+        ("transitivity", "transitivity"),
+        ("density", "density"),
+        ("largest_component_size", "largest_component_size"),
+        ("num_components", "num_components"),
+        ("avg_path_length_weighted", "avg_path_length"),
+    ]:
+        if col in w.columns:
+            mean_, std_ = _mstat(col)
+            row[f"{label}_mean"], row[f"{label}_sd"] = mean_, std_
+
+    if g_agg is not None:
+        degs = np.array(sorted((d for _, d in g_agg.degree()), reverse=True))
+        total = degs.sum()
+        row["hub_share_topN"] = float(degs[:top_n_hub].sum() / total) if total else np.nan
+        if g_agg.number_of_edges() > 0:
+            lcc = g_agg.subgraph(max(nx.connected_components(g_agg), key=len))
+            rng = np.random.default_rng(42)
+            sources = list(lcc.nodes())
+            if len(sources) > 2000:
+                sources = rng.choice(sources, size=2000, replace=False).tolist()
+            lengths = [
+                v
+                for src in sources
+                for v in nx.single_source_shortest_path_length(lcc, src).values()
+                if v > 0
+            ]
+            if lengths:
+                row["shortest_path_mean"] = float(np.mean(lengths))
+                row["shortest_path_median"] = float(np.median(lengths))
+
+    df = pd.DataFrame([row])
+    os.makedirs(output_dir, exist_ok=True)
+    written = []
+
+    csv_path = os.path.join(output_dir, f"{filename_stem}.csv")
+    df.to_csv(csv_path, index=False)
+    written.append(csv_path)
+
+    if write_tex:
+        tex_path = os.path.join(output_dir, f"{filename_stem}.tex")
+        df.to_latex(tex_path, index=False, float_format="%.3g")
+        written.append(tex_path)
+
+    return written

@@ -17,7 +17,7 @@ All three render top agents' ego subgraphs using consistent visual
 encoding:
   - Marker shape: sex (circle = Males, square = Females)
   - Color:        orientation (blue/green/purple, see PALETTE)
-  - Size:         local degree within the ego subgraph
+  - Size:         local degree within the ego subgraph (sqrt-scaled)
   - Label:        age (years), only on sparse networks
 
 Node positions are computed once from the time-aggregated graph
@@ -50,7 +50,9 @@ from partnersim_dynet.network.plots.style import (
     save_figure,
 )
 
+# ---------------------------------------------------------------------------
 # Identification: which agents had the most concurrent partnerships?
+# ---------------------------------------------------------------------------
 
 
 def identify_top_concurrent_agents(
@@ -83,7 +85,6 @@ def identify_top_concurrent_agents(
     real = partnerships[
         partnerships["PartnerAgent"].notna() & partnerships["StartTime"].notna()
     ].copy()
-    # Need both start and end times for overlap computation
     real = real[real["EndTime"].notna()]
     if real.empty:
         return []
@@ -93,7 +94,6 @@ def identify_top_concurrent_agents(
 
     rows = []
     for agent, grp in real.groupby("Agent"):
-        # Sweepline algorithm: process +1 at start, -1 at end, track max
         events = []
         for s, e in zip(grp["StartTime"], grp["EndTime"], strict=False):
             events.append((s, +1))
@@ -119,13 +119,14 @@ def identify_top_concurrent_agents(
     if len(concurrent) >= top_n:
         return concurrent.head(top_n)["Agent"].tolist()
 
-    # Pad from non-concurrent agents to reach top_n
     extra = rank_df[~rank_df["Agent"].isin(concurrent["Agent"])]
     combined = pd.concat([concurrent, extra]).head(top_n)
     return combined["Agent"].tolist()
 
 
+# ---------------------------------------------------------------------------
 # Node layout: shared across the three plot variants
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -169,12 +170,10 @@ def build_shared_ego_layouts(
     -------
     dict mapping each ego agent ID to its ``EgoLayout``.
     """
-    # Build the aggregated graph once, then extract per-ego subgraphs
     overlap = (partnerships.start <= t_end) & (partnerships.end > t_start)
     a = partnerships.agent[overlap]
     b = partnerships.partner[overlap]
 
-    # Node universe: agents active at any point in the window
     node_universe: set[int] = set()
     for t in range(t_start, t_end + 1):
         node_universe |= active.active_at(t)
@@ -202,7 +201,7 @@ def build_shared_ego_layouts(
 
         positions = nx.spring_layout(
             sub,
-            seed=int(ego) % (2**31),
+            seed=hash(ego) % (2**31 - 1),
             k=1.2 / np.sqrt(len(sub)),
             iterations=250,
             fixed=[ego],
@@ -222,7 +221,64 @@ def build_shared_ego_layouts(
     return layouts
 
 
-# Drawing settings — shared by all three plot variants
+# ---------------------------------------------------------------------------
+# Shared drawing helpers
+# ---------------------------------------------------------------------------
+
+
+def _node_sizes(
+    nodes: list[int],
+    ego: int,
+    local_deg: dict[int, int],
+    local_max_deg: int,
+    ego_size: float = 260,
+    min_size: float = 25,
+    max_size: float = 130,
+) -> list[float]:
+    """Return perceptually honest node sizes using sqrt-of-degree scaling.
+
+    Area encodes degree rather than radius. The ego is always the
+    largest node. Sizes calibrated for 2.4" panels at 300 dpi.
+    """
+    sizes = []
+    for n in nodes:
+        if n == ego:
+            sizes.append(ego_size)
+        else:
+            frac = local_deg.get(n, 0) / local_max_deg
+            sizes.append(min_size + (max_size - min_size) * np.sqrt(frac))
+    return sizes
+
+
+def _row_label(ax, ego: int) -> None:
+    """Agent ID label inside the top-left corner of the panel."""
+    ax.text(
+        0.02,
+        0.97,
+        f"Agent {ego}",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=12,
+        fontweight="bold",
+        color="#111111",
+        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.80, edgecolor="none"),
+    )
+
+
+def _annotate_panel(ax, label: str) -> None:
+    """Compact stats annotation at the bottom-right corner."""
+    ax.text(
+        0.98,
+        0.02,
+        label,
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=12.5,
+        color="#444444",
+        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.80, edgecolor="none"),
+    )
 
 
 def _draw_ego_panel(
@@ -230,9 +286,10 @@ def _draw_ego_panel(
     ego_subgraph: nx.Graph,
     layout: EgoLayout,
     node_attr: Mapping[int, Mapping] | None,
+    ego: int,
     edge_color: str = "#222222",
-    edge_alpha: float = 0.85,
-    edge_width: float = 1.5,
+    edge_alpha: float = 0.55,
+    edge_width: float = 0.8,
     show_age_labels: bool = True,
     age_label_max_nodes: int = 30,
     custom_bounds: tuple | None = None,
@@ -240,12 +297,10 @@ def _draw_ego_panel(
     """Draw one ego subgraph onto an axes using the shared layout.
 
     ``node_attr`` maps each agent id to a dict with keys ``Sex``,
-    ``Orientation``, ``Age``. Missing entries fall back to defaults
-    (gray color, "o" shape, no age label).
+    ``Orientation``, ``Age``. Missing entries fall back to defaults.
 
     ``custom_bounds`` overrides ``layout.bounds`` — used by the active-
-    snapshot variant to zoom in on a small set of active nodes within
-    a layout sized for the much larger aggregate graph.
+    snapshot variant to zoom in on the active subset of nodes.
     """
     ax.set_xticks([])
     ax.set_yticks([])
@@ -254,13 +309,11 @@ def _draw_ego_panel(
     lo_x, hi_x, lo_y, hi_y = custom_bounds if custom_bounds else layout.bounds
     ax.set_xlim(lo_x, hi_x)
     ax.set_ylim(lo_y, hi_y)
-    ax.set_aspect("equal")
 
     nodes = list(ego_subgraph.nodes())
     pos = dict(layout.positions)
 
-    # Fill in random positions for nodes that aren't in the shared layout
-    rng = np.random.default_rng(0)
+    rng = np.random.default_rng(hash(ego) % (2**31 - 1))
     for n in nodes:
         if n not in pos:
             pos[n] = np.array(
@@ -270,7 +323,6 @@ def _draw_ego_panel(
                 ]
             )
 
-    # Edges
     if ego_subgraph.number_of_edges() > 0:
         nx.draw_networkx_edges(
             ego_subgraph,
@@ -281,7 +333,6 @@ def _draw_ego_panel(
             width=edge_width,
         )
 
-    # Nodes — grouped by sex (for marker shape)
     local_deg = dict(ego_subgraph.degree())
     local_max_deg = max(max(local_deg.values()) if local_deg else 1, 1)
 
@@ -295,7 +346,7 @@ def _draw_ego_panel(
             continue
 
         colors = [PALETTE.orientation_color(_attr(n).get("Orientation", "")) for n in group]
-        sizes = [80 + 220 * (local_deg.get(n, 0) / local_max_deg) for n in group]
+        sizes = _node_sizes(group, ego, local_deg, local_max_deg)
         nx.draw_networkx_nodes(
             ego_subgraph,
             pos,
@@ -305,11 +356,10 @@ def _draw_ego_panel(
             node_size=sizes,
             node_shape=marker,
             alpha=1.0,
-            linewidths=0.5,
-            edgecolors="black",
+            linewidths=[2.0 if n == ego else 0.5 for n in group],
+            edgecolors=["#FFD700" if n == ego else "#222222" for n in group],
         )
 
-    # Age labels — only on sparse networks
     if show_age_labels and len(nodes) <= age_label_max_nodes:
         for idx, n in enumerate(nodes):
             age = _attr(n).get("Age", "")
@@ -322,38 +372,37 @@ def _draw_ego_panel(
                 x + offset_x,
                 y + offset_y,
                 str(age),
-                fontsize=6.5,
+                fontsize=12,
                 ha="center",
                 va="bottom" if offset_y > 0 else "top",
                 fontweight="bold",
                 bbox=dict(
-                    boxstyle="round,pad=0.2",
-                    facecolor="white",
-                    alpha=0.75,
-                    edgecolor="none",
+                    boxstyle="round,pad=0.2", facecolor="white", alpha=0.75, edgecolor="none"
                 ),
             )
 
 
 def _add_ego_legend(fig, y_anchor: float = 0.02) -> None:
-    """Add a unified legend at the bottom of an ego-network figure."""
+    """Unified legend at the bottom of an ego-network figure."""
     handles = []
 
     handles.append(Line2D([0], [0], color="none", label="Sex:"))
-    for sex in ("Male", "Female"):
+    for sex in ("Female", "Male"):
         handles.append(
             Line2D(
                 [0],
                 [0],
                 marker=PALETTE.sex_shape(sex),
-                color="black",
+                color="#222222",
                 linestyle="None",
-                markersize=7,
+                markersize=8,
                 label=sex,
             )
         )
 
-    handles.append(Line2D([0], [0], color="none", label="   Orientation:"))
+    handles.append(Line2D([0], [0], color="none", label=" "))
+
+    handles.append(Line2D([0], [0], color="none", label="Orientation:"))
     for ori in ("Opposite-sex", "Same-sex", "Bisexual"):
         handles.append(
             Line2D(
@@ -362,12 +411,16 @@ def _add_ego_legend(fig, y_anchor: float = 0.02) -> None:
                 marker="o",
                 color="w",
                 markerfacecolor=PALETTE.orientation_color(ori),
-                markersize=8,
+                markersize=9,
                 label=ori,
+                markeredgecolor="#222222",
+                markeredgewidth=0.5,
             )
         )
 
-    handles.append(Line2D([0], [0], color="none", label="   Degree:"))
+    handles.append(Line2D([0], [0], color="none", label=" "))
+
+    handles.append(Line2D([0], [0], color="none", label="Node size:"))
     handles.append(
         Line2D(
             [0],
@@ -375,8 +428,23 @@ def _add_ego_legend(fig, y_anchor: float = 0.02) -> None:
             marker="o",
             color="w",
             markerfacecolor="gray",
-            markersize=4,
-            label="low",
+            markersize=13,
+            markeredgecolor="#FFD700",
+            markeredgewidth=2,
+            label="ego",
+        )
+    )
+    handles.append(
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            markerfacecolor="gray",
+            markersize=5,
+            markeredgecolor="#222222",
+            markeredgewidth=0.5,
+            label="low degree",
         )
     )
     handles.append(
@@ -387,15 +455,9 @@ def _add_ego_legend(fig, y_anchor: float = 0.02) -> None:
             color="w",
             markerfacecolor="gray",
             markersize=10,
-            label="high",
-        )
-    )
-    handles.append(
-        Line2D(
-            [0],
-            [0],
-            color="none",
-            label="   Numeric labels = age (years)",
+            markeredgecolor="#222222",
+            markeredgewidth=0.5,
+            label="high degree",
         )
     )
 
@@ -404,14 +466,18 @@ def _add_ego_legend(fig, y_anchor: float = 0.02) -> None:
         loc="lower center",
         ncol=len(handles),
         frameon=False,
-        fontsize=8,
+        fontsize=12,
         bbox_to_anchor=(0.5, y_anchor),
-        handletextpad=0.4,
-        columnspacing=0.8,
+        handletextpad=0.45,
+        columnspacing=0.9,
     )
 
 
+# ---------------------------------------------------------------------------
 # Variant 1: dynamic — multi-panel evolution across timesteps
+# ---------------------------------------------------------------------------
+
+
 def plot_ego_network_dynamic(
     partnerships_df: pd.DataFrame,
     partnerships: PartnershipArrays,
@@ -430,32 +496,6 @@ def plot_ego_network_dynamic(
     Rows = top-N most concurrent agents, columns = timesteps. Each cell
     shows the ego subgraph as of that timestep (only partnerships
     currently active).
-
-    Parameters
-    ----------
-    partnerships_df : DataFrame
-        The original partnership DataFrame (for identifying top agents).
-    partnerships : PartnershipArrays
-        Preprocessed partnerships.
-    active : ActiveIntervals
-        Agent activity windows.
-    output_dir : str
-    top_n : int
-    timesteps : list of int
-        Columns of the figure. Order is preserved.
-    node_attr : mapping from agent_id to dict
-        Each dict can contain Sex, Orientation, Age. Build this once
-        from the agent log and reuse across the three plot variants.
-    ego_radius : int
-    filename_stem : str
-    formats : OutputFormats
-    shared_layouts : dict[int, EgoLayout] or None
-        If supplied, used for node positioning. If None, computed
-        internally from the aggregated graph across ``timesteps``.
-
-    Returns
-    -------
-    list of file paths written.
     """
     if not timesteps:
         raise ValueError("timesteps must be a non-empty list")
@@ -476,74 +516,54 @@ def plot_ego_network_dynamic(
 
     n_rows = len(top_agents)
     n_cols = len(timesteps)
+    _panel = 2.4
 
     with publication_style():
-        fig = plt.figure(
-            figsize=(3.6 * n_cols, 4.0 * n_rows + 1.2),
-            constrained_layout=False,
-        )
+        fig = plt.figure(figsize=(_panel * n_cols, _panel * n_rows + 1.0))
         gs = gridspec.GridSpec(
             n_rows,
             n_cols,
             figure=fig,
-            hspace=0.10,
-            wspace=0.05,
-            left=0.06,
-            right=0.97,
-            top=0.86,
-            bottom=0.18,
+            hspace=0.08,
+            wspace=0.04,
+            left=0.04,
+            right=0.98,
+            top=0.90,
+            bottom=0.11,
         )
 
         for i, ego in enumerate(top_agents):
             for j, t in enumerate(timesteps):
                 ax = fig.add_subplot(gs[i, j])
                 G_t = build_graph_at(t, partnerships, active)
-                if ego in G_t:
-                    sub = nx.ego_graph(G_t, ego, ego_radius)
-                else:
-                    sub = nx.Graph()
-                    sub.add_node(ego)
+                sub = nx.ego_graph(G_t, ego, ego_radius) if ego in G_t else _empty(ego)
 
                 _draw_ego_panel(
                     ax,
                     sub,
                     shared_layouts[ego],
                     node_attr,
-                    edge_color="#222222",
-                    edge_alpha=0.85,
-                    edge_width=1.4,
+                    ego,
+                    edge_color="#555555",
+                    edge_alpha=0.55,
+                    edge_width=0.8,
                 )
 
                 if i == 0:
-                    ax.set_title(f"t = {t}", fontsize=11, fontweight="bold", pad=6)
+                    ax.set_title(f"t = {t}", fontsize=12, fontweight="bold", pad=4)
                 if j == 0:
-                    ax.set_ylabel(f"Agent {ego}", fontsize=10, labelpad=8)
+                    _row_label(ax, ego)
 
                 n_e = sub.number_of_edges()
                 n_p = max(sub.number_of_nodes() - 1, 0)
-                ax.text(
-                    0.98,
-                    0.98,
-                    f"{n_e} edges • {n_p} partners",
-                    transform=ax.transAxes,
-                    ha="right",
-                    va="top",
-                    fontsize=7,
-                    color=PALETTE.annotation,
-                    bbox=dict(
-                        boxstyle="round,pad=0.2",
-                        facecolor="white",
-                        alpha=0.75,
-                        edgecolor="none",
-                    ),
-                )
+                _annotate_panel(ax, f"{n_e}e · {n_p}p")
 
-        _add_ego_legend(fig, y_anchor=0.04)
+        _add_ego_legend(fig, y_anchor=0.02)
         fig.suptitle(
             "Dynamic ego networks — partnerships active at each timestep",
             fontsize=12,
             fontweight="bold",
-            y=0.96,
+            y=0.97,
         )
 
         output_base = os.path.join(output_dir, filename_stem)
@@ -553,7 +573,9 @@ def plot_ego_network_dynamic(
     return written
 
 
+# ---------------------------------------------------------------------------
 # Variant 2: active snapshot — one timestep, one column
+# ---------------------------------------------------------------------------
 
 
 def plot_ego_network_active_snapshot(
@@ -570,13 +592,7 @@ def plot_ego_network_active_snapshot(
     formats: OutputFormats = OutputFormats(),
     shared_layouts: dict[int, EgoLayout] | None = None,
 ) -> list[str]:
-    """Single-column ego networks at one snapshot timestep.
-
-    For each top-N agent, draw the ego subgraph showing only the
-    partnerships ACTIVE at ``snapshot_t``. Optionally zoom the
-    viewport to the active subset (otherwise inherits the full
-    aggregated layout's bounds).
-    """
+    """Single-column ego networks at one snapshot timestep."""
     top_agents = identify_top_concurrent_agents(partnerships_df, top_n=top_n)
     if not top_agents:
         return []
@@ -594,32 +610,23 @@ def plot_ego_network_active_snapshot(
     n_rows = len(top_agents)
 
     with publication_style():
-        fig = plt.figure(
-            figsize=(6.0, 4.5 * n_rows + 1.2),
-            constrained_layout=False,
-        )
+        fig = plt.figure(figsize=(4.8, 2.4 * n_rows + 1.0))
         gs = gridspec.GridSpec(
             n_rows,
             1,
             figure=fig,
-            hspace=0.18,
-            left=0.10,
-            right=0.94,
-            top=0.88,
-            bottom=0.18,
+            hspace=0.10,
+            left=0.04,
+            right=0.98,
+            top=0.90,
+            bottom=0.11,
         )
 
         for i, ego in enumerate(top_agents):
             ax = fig.add_subplot(gs[i, 0])
-
             G_t = build_graph_at(snapshot_t, partnerships, active)
-            if ego in G_t:
-                sub = nx.ego_graph(G_t, ego, ego_radius)
-            else:
-                sub = nx.Graph()
-                sub.add_node(ego)
+            sub = nx.ego_graph(G_t, ego, ego_radius) if ego in G_t else _empty(ego)
 
-            # Compute zoomed bounds from the active subset of nodes
             custom_bounds = None
             if zoom_to_active and sub.number_of_nodes() > 1:
                 pos = shared_layouts[ego].positions
@@ -639,38 +646,24 @@ def plot_ego_network_active_snapshot(
                 sub,
                 shared_layouts[ego],
                 node_attr,
-                edge_color="#0E3926",
-                edge_alpha=0.9,
-                edge_width=1.6,
+                ego,
+                edge_color="#555555",
+                edge_alpha=0.55,
+                edge_width=0.8,
                 custom_bounds=custom_bounds,
             )
 
-            ax.set_ylabel(f"Agent {ego}", fontsize=10, labelpad=8)
+            _row_label(ax, ego)
             n_e = sub.number_of_edges()
             n_p = max(sub.number_of_nodes() - 1, 0)
-            ax.text(
-                0.98,
-                0.98,
-                f"{n_e} active edges • {n_p} current partners",
-                transform=ax.transAxes,
-                ha="right",
-                va="top",
-                fontsize=8.5,
-                color=PALETTE.annotation,
-                bbox=dict(
-                    boxstyle="round,pad=0.25",
-                    facecolor="white",
-                    alpha=0.85,
-                    edgecolor="none",
-                ),
-            )
+            _annotate_panel(ax, f"{n_e}e · {n_p}p")
 
-        _add_ego_legend(fig, y_anchor=0.04)
+        _add_ego_legend(fig, y_anchor=0.02)
         fig.suptitle(
-            f"Active-snapshot ego networks — partnerships active at t = {snapshot_t}",
+            f"Active-snapshot ego networks — t = {snapshot_t}",
             fontsize=12,
             fontweight="bold",
-            y=0.95,
+            y=0.97,
         )
 
         output_base = os.path.join(output_dir, filename_stem)
@@ -680,7 +673,9 @@ def plot_ego_network_active_snapshot(
     return written
 
 
+# ---------------------------------------------------------------------------
 # Variant 3: static aggregate — every partnership in [t_start, t_end]
+# ---------------------------------------------------------------------------
 
 
 def plot_ego_network_static_aggregate(
@@ -697,12 +692,7 @@ def plot_ego_network_static_aggregate(
     formats: OutputFormats = OutputFormats(),
     shared_layouts: dict[int, EgoLayout] | None = None,
 ) -> list[str]:
-    """Static aggregate: every partnership in [t_start, t_end] on one figure.
-
-    For each top-N agent, draw the ego subgraph aggregating ALL
-    partnerships that occurred during ``[t_start, t_end]`` into one
-    graph. Edge weights are not depicted; this is a presence-only view.
-    """
+    """Static aggregate: every partnership in [t_start, t_end]."""
     if t_start > t_end:
         raise ValueError(f"t_start ({t_start}) must be <= t_end ({t_end})")
 
@@ -720,7 +710,6 @@ def plot_ego_network_static_aggregate(
             ego_radius=ego_radius,
         )
 
-    # Build the aggregated graph (every partnership in window)
     overlap = (partnerships.start <= t_end) & (partnerships.end > t_start)
     a = partnerships.agent[overlap]
     b = partnerships.partner[overlap]
@@ -738,70 +727,48 @@ def plot_ego_network_static_aggregate(
     n_rows = len(top_agents)
 
     with publication_style():
-        fig = plt.figure(
-            figsize=(8.5, 7.5 * n_rows + 1.2),
-            constrained_layout=False,
-        )
+        fig = plt.figure(figsize=(9.0, 3.0 * n_rows + 1.0))
         gs = gridspec.GridSpec(
             n_rows,
             1,
             figure=fig,
-            hspace=0.18,
+            hspace=0.14,
             left=0.08,
-            right=0.95,
+            right=0.97,
             top=0.92,
-            bottom=0.13,
+            bottom=0.10,
         )
 
         for i, ego in enumerate(top_agents):
             ax = fig.add_subplot(gs[i, 0])
-
-            if ego in G_agg:
-                sub = nx.ego_graph(G_agg, ego, ego_radius)
-            else:
-                sub = nx.Graph()
-                sub.add_node(ego)
+            sub = nx.ego_graph(G_agg, ego, ego_radius) if ego in G_agg else _empty(ego)
 
             n_partners = max(sub.number_of_nodes() - 1, 0)
-            edge_alpha = 0.5 if n_partners > 40 else 0.7
-            edge_width = 0.6 if n_partners > 40 else 1.0
+            edge_alpha = 0.4 if n_partners > 40 else 0.55
+            edge_width = 0.5 if n_partners > 40 else 0.8
 
             _draw_ego_panel(
                 ax,
                 sub,
                 shared_layouts[ego],
                 node_attr,
-                edge_color="#333333",
+                ego,
+                edge_color="#555555",
                 edge_alpha=edge_alpha,
                 edge_width=edge_width,
                 age_label_max_nodes=30,
             )
 
-            ax.set_ylabel(f"Agent {ego}", fontsize=10, labelpad=8)
+            _row_label(ax, ego)
             n_e = sub.number_of_edges()
-            ax.text(
-                0.98,
-                0.98,
-                f"{n_e} aggregated edges • {n_partners} unique partners",
-                transform=ax.transAxes,
-                ha="right",
-                va="top",
-                fontsize=8.5,
-                color=PALETTE.annotation,
-                bbox=dict(
-                    boxstyle="round,pad=0.25",
-                    facecolor="white",
-                    alpha=0.85,
-                    edgecolor="none",
-                ),
-            )
+            _annotate_panel(ax, f"{n_e}e · {n_partners}p")
 
-        _add_ego_legend(fig, y_anchor=0.03)
+        _add_ego_legend(fig, y_anchor=0.02)
         fig.suptitle(
-            f"Static-aggregate ego networks — all partnerships in [{t_start}, {t_end}]",
+            f"Aggregate ego networks — all partnerships in [{t_start}, {t_end}]",
             fontsize=12,
             fontweight="bold",
-            y=0.96,
+            y=0.97,
         )
 
         output_base = os.path.join(output_dir, filename_stem)
@@ -811,7 +778,21 @@ def plot_ego_network_static_aggregate(
     return written
 
 
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _empty(ego: int) -> nx.Graph:
+    """Return a single-node graph for an ego absent from the network."""
+    g = nx.Graph()
+    g.add_node(ego)
+    return g
+
+
+# ---------------------------------------------------------------------------
 # Helper: build node_attr from agent log
+# ---------------------------------------------------------------------------
 
 
 def build_node_attr(
@@ -822,11 +803,8 @@ def build_node_attr(
 
     Each agent gets a dict with Sex, Orientation, and Age. If
     ``snapshot_t`` is provided, Age is computed at that timestep
-    (EntryAge + (snapshot_t - EntryTimestep)); otherwise the
-    EntryAge is used unchanged.
-
-    Convenience function — callers can also build node_attr themselves
-    if they want richer attributes than these three.
+    (EntryAge + (snapshot_t - EntryTimestep)); otherwise EntryAge
+    is used unchanged.
     """
     out: dict[int, dict] = {}
     for _, row in agent_log.iterrows():

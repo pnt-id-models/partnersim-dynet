@@ -1,12 +1,11 @@
 """Top-level simulation configuration.
 
-`PartnershipConfig` controls a single simulation run — population size,
-duration, concurrency settings. `SimulationConfig` wraps it for
-multi-replicate experiments with deterministic seed derivation.
+`PartnershipConfig` controls a single simulation run which includes the
+population size, duration, concurrency proportions.
+`SimulationConfig` wraps it for multi-replicate experiments with deterministic seed.
 
-All flags default to safe-fast values: partnership simulation always
-    runs, optional analyses default off. Enable per-experiment via the
-    boolean flags below.
+All flags default to values that prioritises performance: partnership simulation always
+runs, optional analyses default off. Enable per-experiment via the boolean flags below.
 
 """
 
@@ -41,7 +40,7 @@ class PartnershipConfig:
     Concurrency
     ───────────
     concurrency_prop : float
-        Proportion of agents flagged as allwed to form concurrent partnerships.
+        Proportion of agents flagged as allOwed to form concurrent partnerships.
         These agents can hold multiple partnerships simultaneously; non-concurrent
         agents are limited to one partnership at a time.
     lambda_concurrency : int
@@ -52,6 +51,7 @@ class PartnershipConfig:
     concurrency_model : int
         Which concurrency-assignment scheme to use (1, 2, or 3). See
         ``partnersim_dynet.generator.concurrency`` for details.
+        Default is 1, which is the simplest and most efficient.
     concurrency_model_3_nb_threshold : float
         For Model 3 only: only agents whose ``nb_mult_form`` exceeds this
         threshold are eligible for concurrency.
@@ -94,7 +94,7 @@ class PartnershipConfig:
     ────────────────────
     prob_floor, prob_ceiling : float
         Effective probabilities are clipped to [prob_floor, prob_ceiling]
-        to prevent degenerate behaviour at the extremes.
+        to prevent unrealistic extreme values.
 
     Probabilities & I/O
     ───────────────────
@@ -104,15 +104,15 @@ class PartnershipConfig:
         If True, write a per-agent-per-timestep population history file.
     """
 
-    # population & duration
-    num_agents: int = 1500
+    # population size & duration
+    num_agents: int = 15000
     total_timesteps: int = 1875
 
-    # agent heterogeneity
+    # individual-level agent heterogeneity
     nb_r: float = 0.5
     nb_p: float = 0.5
 
-    # concurrency
+    # concurrency parameters
     concurrency_prop: float = 0.0
     lambda_concurrency: int = 4
     concurrency_min_partner_cap: int = 2
@@ -185,7 +185,7 @@ class PartnershipConfig:
         # clipping
         if not 0.0 < self.prob_floor < self.prob_ceiling <= 1.0:
             raise ValueError(
-                "prob_floor and prob_ceiling must satisfy " "0 < prob_floor < prob_ceiling <= 1"
+                "prob_floor and prob_ceiling must satisfy 0 < prob_floor < prob_ceiling <= 1"
             )
 
 
@@ -209,12 +209,15 @@ class SimulationConfig:
 
     n_workers: int = 1
 
-    # ── Analysis flags (default off for fast runs)
+    # Flags for analysis and output. Default to False for performance; enable per-experiment.
     run_metrics: bool = False
     run_degree_distributions: bool = False
     run_plots: bool = False
     run_diagnostics: bool = False
+    run_structural_summary: bool = False
+    run_summary_table: bool = False
 
+    # Validation of the config parameters. Raises ValueError if any parameter is invalid.
     def __post_init__(self) -> None:
         if self.n_partnership_replicates <= 0:
             raise ValueError("n_partnership_replicates must be positive")
@@ -223,6 +226,7 @@ class SimulationConfig:
         if self.n_workers <= 0:
             raise ValueError("n_workers must be positive")
 
+    # Generates a list of deterministic seeds for each replicate based on the base seed.
     def partnership_seeds(self) -> list[int]:
         """Deterministically derive per-replicate seeds from the base seed."""
         rng = np.random.default_rng(self.base_partnership_seed)

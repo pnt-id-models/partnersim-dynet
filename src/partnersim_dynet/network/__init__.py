@@ -22,7 +22,7 @@ from partnersim_dynet.network.metrics import (
     degree_by_demographic_over_time,
     degree_in_window,
     degree_stats,
-    sampled_avg_path_length,
+    steady_state_summary_table,
     transitivity,
 )
 
@@ -36,9 +36,9 @@ __all__ = [
     "component_stats",
     "compute_temporal_metrics",
     "degree_stats",
-    "sampled_avg_path_length",
     "transitivity",
     "degree_at_snapshots",
     "degree_by_demographic_over_time",
     "degree_in_window",
+    "steady_state_summary_table",
 ]

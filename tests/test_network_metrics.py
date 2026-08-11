@@ -165,6 +165,8 @@ class TestComputeTemporalMetrics:
             "mean_component_size",
             "transitivity",
             "avg_path_length",
+            "avg_path_length_weighted",
+            "triangle_count",
         }
         assert set(metrics.columns) == expected
 

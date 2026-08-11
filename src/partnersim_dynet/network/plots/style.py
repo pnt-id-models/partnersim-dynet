@@ -8,13 +8,6 @@ Three things live here:
 3. A `save_figure` helper that writes PNG / PDF / SVG outputs with
    independent toggles.
 
-Design rationale
-----------------
-The old visualiser called `plt.rcParams.update(...)` at module import.
-That mutates global matplotlib state for the entire Python process —
-any user importing the package would silently inherit our font and
-spine choices in their own unrelated plots. We use `plt.rc_context()`
-instead, which restores the previous settings on exit.
 """
 
 from __future__ import annotations
@@ -38,15 +31,18 @@ class NetworkPalette:
     """
 
     # Orientation colors — used in ego networks, degree heatmaps, etc.
-    orientation_opposite: str = "#191592"  # deep blue
-    orientation_same: str = "#145825"  # deep green
-    orientation_bisexual: str = "#5B1C65"  # deep purple
-
+    orientation_opposite: str = "#1B41BC"  # vivid blue
+    orientation_same: str = "#0C8A43"  # vivid green
+    orientation_bisexual: str = "#780C99"  # vivid purple/magenta
+    timeseries_line: str = "#1B2A4E"
     # Per-metric colors for timeseries plots
-    avg_degree: str = "#0E3926"  # forest green
-    max_degree: str = "#E63946"  # red
-    transitivity: str = "#8338EC"  # purple
-    avg_path_length: str = "#54C6EB"  # light blue
+    avg_degree: str = "#1B2A4E"
+    max_degree: str = "#1B2A4E"
+    transitivity: str = "#1B2A4E"
+    avg_path_length: str = "#1B2A4E"
+    largest_component_size: str = "#1B2A4E"
+    triangle_count: str = "#1B2A4E"
+    avg_path_length_weighted: str = "#1B2A4E"
 
     # Shape codes for sex (used in ego networks)
     male_shape: str = "o"  # circle

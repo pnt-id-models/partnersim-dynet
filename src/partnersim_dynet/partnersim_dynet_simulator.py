@@ -21,8 +21,11 @@ If ``run_degree_distributions=True``:
 - ``degree_in_window.{parquet,csv}`` (full simulation window)
 
 If ``run_plots=True``:
-- Plots subdirectory with all timeseries, heatmap, and ego network
-  figures.
+- Plots subdirectory with all timeseries, heatmap, and ego network figures.
+
+If ``run_structural_summary=True``:
+- ``structural_summary.{parquet,csv}``: scalar network metrics for R analysis.
+  Requires run_metrics=True (or run_plots=True) to supply metrics_df.
 
 If ``run_diagnostics=True``:
 - ``base_probabilities.csv``, ``effective_bounds.csv``
@@ -40,20 +43,26 @@ import pandas as pd
 
 from partnersim_dynet.config import PartnershipConfig, SimulationConfig
 from partnersim_dynet.generator import PartnershipGenerator
+from partnersim_dynet.network.plots.ego_network_new import identify_agents_by_spec
+from partnersim_dynet.network.plots.timeseries import (
+    BURN_IN_STEPS,
+    CENSORING_STEPS,
+    plot_avg_path_length,
+    plot_degree_summary,
+    plot_density,
+    plot_hub_distribution,
+)
 
 logger = logging.getLogger(__name__)
 
-# Run summary returned by run_single
+# ---------------------------------------------------------------------------
+# Run summary
+# ---------------------------------------------------------------------------
 
 
 @dataclass
 class RunResult:
-    """Summary of a single simulation run.
-
-    Returned by ``run_single`` so callers (including ``run_replicates``)
-    know which files were written and where. Not pickled into multiprocess
-    workers; constructed in the caller process.
-    """
+    """Summary of a single simulation run."""
 
     seed: int
     output_dir: str
@@ -62,11 +71,12 @@ class RunResult:
     files_written: list[str]
 
 
+# ---------------------------------------------------------------------------
 # I/O helper
+# ---------------------------------------------------------------------------
 
 
 def _save_dataframe(df: pd.DataFrame, output_dir: str, name: str, fmt: str) -> str:
-    """Save ``df`` to ``{output_dir}/{name}.{fmt}``. Returns the path."""
     if fmt not in ("parquet", "csv"):
         raise ValueError(f"unsupported format: {fmt!r}")
     os.makedirs(output_dir, exist_ok=True)
@@ -78,7 +88,10 @@ def _save_dataframe(df: pd.DataFrame, output_dir: str, name: str, fmt: str) -> s
     return path
 
 
+# ---------------------------------------------------------------------------
 # Single run
+# ---------------------------------------------------------------------------
+seed = 380863079
 
 
 def run_single(
@@ -92,33 +105,19 @@ def run_single(
     run_degree_distributions: bool = False,
     run_plots: bool = False,
     run_diagnostics: bool = False,
+    run_summary_table: bool = True,
     snapshot_times: list[int] | None = None,
 ) -> RunResult:
     """Run single simulation and write outputs to ``output_dir``.
 
     Parameters
     ----------
-    cfg : PartnershipConfig
-        The simulation parameters.
-    seed : int
-        Random seed for this run. Reproducible.
-    output_dir : str
-        Where to write outputs. Created if missing.
-    output_format : "parquet" | "csv"
-        Format for DataFrame outputs. Parquet is recommended.
-    verbose : bool
-        If True, log progress at INFO level.
-    run_metrics, run_degree_distributions, run_plots, run_diagnostics : bool
-        Analysis toggles. ``run_plots`` implies ``run_metrics``
-        internally (plots need metrics).
-    snapshot_times : list of int or None
-        Used only when degree distributions or plots are requested. If
-        None, defaults to 5 evenly-spaced points across the simulation.
-
-    Returns
-    -------
-    RunResult
-        Summary of what was written.
+    run_structural_summary : bool
+        If True, compute scalar structural metrics on the steady-state
+        aggregate graph and write ``structural_summary.{fmt}``.
+        Requires ``run_metrics=True`` or ``run_plots=True`` so that
+        ``metrics_df``, ``arr``, and ``active`` are available.
+        Automatically enabled when ``run_plots=True``.
     """
     if verbose:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
@@ -126,6 +125,10 @@ def run_single(
 
     os.makedirs(output_dir, exist_ok=True)
     files: list[str] = []
+
+    # # run_plots implies run_structural_summary
+    # if run_plots:
+    #     run_structural_summary = True
 
     # ── (1) Simulation ────────────────────────────────────────────────
     gen = PartnershipGenerator(cfg, seed=seed)
@@ -141,15 +144,17 @@ def run_single(
     files.append(_save_dataframe(partnerships_df, output_dir, "partnerships", output_format))
     files.append(_save_dataframe(agent_log, output_dir, "agent_log", output_format))
 
-    # Default snapshot_times if needed downstream
     if snapshot_times is None and (run_degree_distributions or run_plots):
         T = cfg.total_timesteps
         snapshot_times = [max(1, int(round(T * k / 4))) for k in (0, 1, 2, 3, 4)]
 
-    # ── (2) Metrics ──────────────────────────────────────────────────
+    # ── (2) Metrics ───────────────────────────────────────────────────
     metrics_df: pd.DataFrame | None = None
     degree_demo_df: pd.DataFrame | None = None
-    need_metrics = run_metrics or run_plots
+    arr = None
+    active = None
+
+    need_metrics = run_metrics or run_plots or run_summary_table
     if need_metrics:
         from partnersim_dynet.network import (
             ActiveIntervals,
@@ -164,7 +169,7 @@ def run_single(
         if verbose:
             logger.info("Metrics computed: %d timesteps", len(metrics_df))
 
-    # ── (3) Degree distributions ─────────────────────────────────────
+    # ── (3) Degree distributions ──────────────────────────────────────
     if run_degree_distributions:
         from partnersim_dynet.network import (
             ActiveIntervals,
@@ -174,8 +179,7 @@ def run_single(
             prepare_partnerships,
         )
 
-        # Reuse active and arr if already built above; otherwise build now
-        if not need_metrics:
+        if arr is None:
             active = ActiveIntervals.from_agent_log(agent_log, total_timesteps=cfg.total_timesteps)
             arr = prepare_partnerships(partnerships_df, total_timesteps=cfg.total_timesteps)
 
@@ -185,17 +189,37 @@ def run_single(
         files.append(
             _save_dataframe(degree_demo_df, output_dir, "degree_by_demographic", output_format)
         )
-
         snap_df = degree_at_snapshots(snapshot_times, arr, active, agent_log)
         files.append(_save_dataframe(snap_df, output_dir, "degree_at_snapshots", output_format))
-
         win_df = degree_in_window(1, cfg.total_timesteps, arr, active, agent_log)
         files.append(_save_dataframe(win_df, output_dir, "degree_in_window", output_format))
-
         if verbose:
             logger.info("Degree distributions computed")
 
-    # ── (4) Plots ────────────────────────────────────────────────────
+    # ── (3b) Structural summary ───────────────────────────────────────
+    # Build g_agg once here; reused by both the summary and the plots block.
+    g_agg = None
+    if run_plots:
+        import networkx as nx
+
+        t_min = int(metrics_df["t"].min())
+        t_max = int(metrics_df["t"].max())
+        t_ss_start = t_min + BURN_IN_STEPS
+        t_ss_end = t_max - CENSORING_STEPS
+        overlap = (arr.start <= t_ss_end) & (arr.end > t_ss_start)
+
+        node_universe: set[int] = set()
+        for _t in range(t_ss_start, t_ss_end + 1):
+            node_universe |= active.active_at(_t)
+
+        g_agg = nx.Graph()
+        g_agg.add_nodes_from(node_universe)
+        for _ai, _bi in zip(
+            arr.agent[overlap].tolist(), arr.partner[overlap].tolist(), strict=False
+        ):
+            if int(_ai) in node_universe and int(_bi) in node_universe and _ai != _bi:
+                g_agg.add_edge(int(_ai), int(_bi))
+    # ── (4) Plots ─────────────────────────────────────────────────────
     if run_plots:
         from partnersim_dynet.network import (
             ActiveIntervals,
@@ -205,28 +229,35 @@ def run_single(
         from partnersim_dynet.network.plots import (
             build_node_attr,
             build_shared_ego_layouts,
-            identify_top_concurrent_agents,
-            plot_avg_degree,
-            plot_avg_path_length,
-            plot_degree_heatmap_evolution,
-            plot_ego_network_active_snapshot,
-            plot_ego_network_dynamic,
+            plot_degree_temporal_heatmaps,
+            plot_ego_3hop_aggregate_per_agent,
+            plot_ego_3hop_snapshots,
             plot_ego_network_static_aggregate,
-            plot_max_degree,
+            plot_largest_component_size,
+            plot_shortest_path_distribution,
             plot_transitivity,
+        )
+        from partnersim_dynet.network.plots.heatmap import (
+            temporal_windows as heatmap_windows,
         )
 
         plots_dir = os.path.join(output_dir, "plots")
         os.makedirs(plots_dir, exist_ok=True)
 
-        # Timeseries
-        for plot_fn in (plot_avg_degree, plot_max_degree, plot_transitivity, plot_avg_path_length):
+        # Timeseries plots that consume the per-timestep metrics DataFrame.
+        for plot_fn in (
+            plot_transitivity,
+            plot_density,
+            plot_largest_component_size,
+            plot_avg_path_length,
+        ):
             files.extend(plot_fn(metrics_df, plots_dir))
 
-        # Heatmap — needs degree_by_demographic
+        files.extend(plot_degree_summary(metrics_df, plots_dir))
+
+        # Heatmap
         if degree_demo_df is None:
-            # Compute on the fly if degree distributions weren't enabled
-            if not need_metrics:
+            if arr is None:
                 active = ActiveIntervals.from_agent_log(
                     agent_log, total_timesteps=cfg.total_timesteps
                 )
@@ -234,62 +265,102 @@ def run_single(
             degree_demo_df = degree_by_demographic_over_time(
                 arr, active, agent_log, total_timesteps=cfg.total_timesteps
             )
+        files.extend(
+            plot_degree_temporal_heatmaps(
+                degree_demo_df,
+                windows=heatmap_windows,
+                output_dir=plots_dir,
+            )
+        )
 
-        files.extend(plot_degree_heatmap_evolution(degree_demo_df, snapshot_times, plots_dir))
+        # Ego networks — spec-selected agents, ages anchored to reference_t
+        ego_timesteps = [1000, 1500]
+        reference_t = ego_timesteps[0]
 
-        # Ego networks
-        node_attr = build_node_attr(agent_log)
-        top_agents = identify_top_concurrent_agents(partnerships_df, top_n=3)
-        if top_agents:
+        node_attr = build_node_attr(agent_log, snapshot_t=reference_t)
+        eligible_now = active.active_at(reference_t)
+
+        specs = [
+            ("Female", "Bisexual"),
+            ("Female", "Same-sex"),
+            ("Male", "Opposite-sex"),
+        ]
+        spec_agents = identify_agents_by_spec(
+            partnerships_df,
+            node_attr,
+            specs,
+            eligible_agents=eligible_now,
+        )
+        spec_agents = [a for a in spec_agents if a is not None]
+
+        if spec_agents:
             layouts = build_shared_ego_layouts(
-                arr,
-                active,
-                top_agents,
-                t_start=1,
-                t_end=cfg.total_timesteps,
+                arr, active, spec_agents, t_start=1, t_end=cfg.total_timesteps
             )
-            files.extend(
-                plot_ego_network_dynamic(
-                    partnerships_df=partnerships_df,
-                    partnerships=arr,
-                    active=active,
-                    output_dir=plots_dir,
-                    top_n=len(top_agents),
-                    timesteps=snapshot_times,
-                    node_attr=node_attr,
-                    shared_layouts=layouts,
-                )
-            )
-            files.extend(
-                plot_ego_network_active_snapshot(
-                    partnerships_df=partnerships_df,
-                    partnerships=arr,
-                    active=active,
-                    output_dir=plots_dir,
-                    top_n=len(top_agents),
-                    snapshot_t=snapshot_times[-1],
-                    node_attr=node_attr,
-                    shared_layouts=layouts,
-                )
-            )
+
             files.extend(
                 plot_ego_network_static_aggregate(
                     partnerships_df=partnerships_df,
                     partnerships=arr,
                     active=active,
                     output_dir=plots_dir,
-                    top_n=len(top_agents),
+                    agents=spec_agents,
                     t_start=1,
                     t_end=cfg.total_timesteps,
                     node_attr=node_attr,
                     shared_layouts=layouts,
                 )
             )
+            files.extend(
+                plot_ego_3hop_aggregate_per_agent(
+                    partnerships_df=partnerships_df,
+                    partnerships=arr,
+                    active=active,
+                    agent_log=agent_log,
+                    output_dir=str(plots_dir),
+                    agents=spec_agents,
+                    total_timesteps=cfg.total_timesteps,
+                    k_hops=3,
+                    max_nodes=100,
+                )
+            )
+            files.extend(
+                plot_ego_3hop_snapshots(
+                    partnerships_df=partnerships_df,
+                    partnerships=arr,
+                    active=active,
+                    agent_log=agent_log,
+                    output_dir=str(plots_dir),
+                    agents=spec_agents,
+                    timesteps=ego_timesteps,
+                    k_hops=3,
+                    max_nodes=100,
+                )
+            )
+
+        elif verbose:
+            logger.info("No agents matched the specs — skipping ego network plots")
+
+        files.extend(plot_shortest_path_distribution(g_agg, plots_dir))
+        files.extend(plot_hub_distribution(g_agg, plots_dir))
 
         if verbose:
             logger.info("Plots written to %s", plots_dir)
 
-    # ── (5) Diagnostics ──────────────────────────────────────────────
+    # ── (4b) Summary table ────────────────────────────────────────────
+    if run_summary_table:
+        from partnersim_dynet.network import steady_state_summary_table
+
+        files.extend(
+            steady_state_summary_table(
+                metrics_df,
+                output_dir,
+                g_agg=g_agg,  # g_agg is None if run_plots=False
+            )
+        )
+        if verbose:
+            logger.info("Summary table written to %s", output_dir)
+    # ── (5) Diagnostics ───────────────────────────────────────────────
     if run_diagnostics:
         from partnersim_dynet.diagnostics import (
             export_probability_bounds_csv,
@@ -307,7 +378,6 @@ def run_single(
             )
         )
         files.extend(plot_agent_probability_distributions(cfg, agent_log, diag_dir))
-
         if verbose:
             logger.info("Diagnostics written to %s", diag_dir)
 
@@ -320,15 +390,12 @@ def run_single(
     )
 
 
+# ---------------------------------------------------------------------------
 # Multi-replicate batch
+# ---------------------------------------------------------------------------
 
 
 def _run_single_worker(kwargs: dict) -> RunResult:
-    """Worker function for ProcessPoolExecutor.
-
-    Takes a dict instead of unpacking arguments because that's the
-    cleanest cross-process call pattern.
-    """
     return run_single(**kwargs)
 
 
@@ -337,31 +404,7 @@ def run_replicates(
     base_output_dir: str,
     snapshot_times: list[int] | None = None,
 ) -> list[RunResult]:
-    """Run ``sim_cfg.n_partnership_replicates`` simulations, one per seed.
-
-    Each replicate runs ``run_single`` with one of the seeds from
-    ``sim_cfg.partnership_seeds()``. Outputs go in
-    ``{base_output_dir}/partnership_seed_<N>/``.
-
-    If ``sim_cfg.n_workers > 1``, replicates run in parallel via
-    ``ProcessPoolExecutor``. Set ``n_workers=1`` for serial execution
-    (avoids the multiprocessing overhead, useful for debugging).
-
-    Parameters
-    ----------
-    sim_cfg : SimulationConfig
-        Drives all per-replicate config and analysis flags.
-    base_output_dir : str
-        Parent directory for the per-replicate subdirectories. Created
-        if missing.
-    snapshot_times : list of int or None
-        Passed through to ``run_single``.
-
-    Returns
-    -------
-    list of RunResult
-        One per replicate, in seed order.
-    """
+    """Run ``sim_cfg.n_partnership_replicates`` simulations, one per seed."""
     os.makedirs(base_output_dir, exist_ok=True)
     seeds = sim_cfg.partnership_seeds()
 
@@ -374,7 +417,6 @@ def run_replicates(
             seeds,
         )
 
-    # Build per-replicate
     jobs = []
     for seed in seeds:
         replicate_dir = os.path.join(base_output_dir, f"partnership_seed_{seed}")
@@ -393,11 +435,9 @@ def run_replicates(
             )
         )
 
-    # Serial path: avoids pool overhead
     if sim_cfg.n_workers == 1:
         return [_run_single_worker(job) for job in jobs]
 
-    # Parallel path
     results: list[RunResult] = []
     with ProcessPoolExecutor(max_workers=sim_cfg.n_workers) as executor:
         future_to_seed = {executor.submit(_run_single_worker, job): job["seed"] for job in jobs}
@@ -412,7 +452,6 @@ def run_replicates(
                 logger.error("Replicate seed=%d failed: %s", seed, exc)
                 raise
 
-    # Sort by seed to give a deterministic return order regardless of which worker finished first
     seed_order = {int(seed): i for i, seed in enumerate(seeds)}
     results.sort(key=lambda r: seed_order[r.seed])
     return results

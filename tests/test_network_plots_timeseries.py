@@ -34,11 +34,29 @@ from partnersim_dynet.network.plots import (
     plot_timeseries,
     plot_transitivity,
 )
+from partnersim_dynet.network.plots.timeseries import BURN_IN_STEPS, CENSORING_STEPS
+
+MIN_STEPS = BURN_IN_STEPS + CENSORING_STEPS + 1  # 101
+
+
+@pytest.fixture
+def metrics_df():
+    n = MIN_STEPS * 2  # 202 — comfortable margin, zones visible
+    return pd.DataFrame(
+        {
+            "t": range(1, n + 1),
+            "avg_degree": np.random.default_rng(0).uniform(0, 2, n),
+            "max_degree": np.random.default_rng(1).integers(1, 5, n),
+            "transitivity": np.random.default_rng(2).uniform(0, 0.3, n),
+            "avg_path_length": np.random.default_rng(3).uniform(1, 4, n),
+        }
+    )
+
 
 # Helpers
 
 
-def _make_metrics_df(n_timesteps: int = 100) -> pd.DataFrame:
+def _make_metrics_df(n_timesteps: int = 200) -> pd.DataFrame:
     """Build a synthetic metrics DataFrame with all the columns the plot
     functions might want."""
     rng = np.random.default_rng(0)
@@ -62,7 +80,7 @@ class TestTimeseriesSpec:
         spec = TimeseriesSpec(
             metric_column="my_metric",
             ylabel="y",
-            title="t",
+            # title="t",
             color="#000000",
         )
         assert spec.filename_stem == "my_metric_over_time"
@@ -71,7 +89,7 @@ class TestTimeseriesSpec:
         spec = TimeseriesSpec(
             metric_column="my_metric",
             ylabel="y",
-            title="t",
+            # title="t",
             color="#000000",
             filename_stem="custom_name",
         )
@@ -123,8 +141,6 @@ class TestPlotTimeseries:
             metrics,
             SPEC_AVG_DEGREE,
             str(tmp_path),
-            t_start=20,
-            t_end=80,
         )
         assert os.path.exists(written[0])
 
@@ -136,8 +152,6 @@ class TestPlotTimeseries:
             metrics,
             SPEC_AVG_DEGREE,
             str(tmp_path),
-            t_start=1,
-            t_end=None,
         )
         assert os.path.exists(written[0])
 

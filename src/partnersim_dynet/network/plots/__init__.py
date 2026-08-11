@@ -7,16 +7,17 @@ All plot functions:
 - Wrap their drawing in ``publication_style`` (no global rcParams pollution)
 """
 
-from partnersim_dynet.network.plots.ego_network import (
+from partnersim_dynet.network.plots.ego_network_new import (
     EgoLayout,
     build_node_attr,
     build_shared_ego_layouts,
+    identify_agents_by_spec,
     identify_top_concurrent_agents,
-    plot_ego_network_active_snapshot,
-    plot_ego_network_dynamic,
+    plot_ego_3hop_aggregate_per_agent,
+    plot_ego_3hop_snapshots,
     plot_ego_network_static_aggregate,
 )
-from partnersim_dynet.network.plots.heatmap import plot_degree_heatmap_evolution
+from partnersim_dynet.network.plots.heatmap import plot_degree_temporal_heatmaps
 from partnersim_dynet.network.plots.style import (
     PALETTE,
     NetworkPalette,
@@ -25,14 +26,16 @@ from partnersim_dynet.network.plots.style import (
     save_figure,
 )
 from partnersim_dynet.network.plots.timeseries import (
-    SPEC_AVG_DEGREE,
-    SPEC_AVG_PATH_LENGTH,
-    SPEC_MAX_DEGREE,
+    SPEC_LARGEST_COMPONENT_SIZE,
     SPEC_TRANSITIVITY,
     TimeseriesSpec,
-    plot_avg_degree,
+    plot_all_structural,
     plot_avg_path_length,
-    plot_max_degree,
+    plot_degree_summary,
+    plot_density,
+    plot_hub_distribution,
+    plot_largest_component_size,
+    plot_shortest_path_distribution,
     plot_timeseries,
     plot_transitivity,
 )
@@ -44,25 +47,31 @@ __all__ = [
     "OutputFormats",
     "publication_style",
     "save_figure",
-    # timeseries
-    "SPEC_AVG_DEGREE",
-    "SPEC_AVG_PATH_LENGTH",
-    "SPEC_MAX_DEGREE",
+    # timeseries — specs
     "SPEC_TRANSITIVITY",
+    "SPEC_LARGEST_COMPONENT_SIZE",
     "TimeseriesSpec",
-    "plot_avg_degree",
-    "plot_avg_path_length",
-    "plot_max_degree",
-    "plot_timeseries",
+    # timeseries — time series plots
     "plot_transitivity",
+    "plot_largest_component_size",
+    "plot_timeseries",
+    "plot_density",
+    "plot_degree_summary",
+    # timeseries — structural snapshot plots
+    "plot_all_structural",
+    "plot_shortest_path_distribution",
+    "plot_hub_distribution",
+    "plot_avg_path_length",
     # heatmap
-    "plot_degree_heatmap_evolution",
-    # ego networks
+    "plot_degree_temporal_heatmaps",
+    # ego networks (1-hop)
     "EgoLayout",
     "build_node_attr",
     "build_shared_ego_layouts",
     "identify_top_concurrent_agents",
-    "plot_ego_network_active_snapshot",
-    "plot_ego_network_dynamic",
+    "identify_agents_by_spec",
     "plot_ego_network_static_aggregate",
+    # ego networks (multi-hop)
+    "plot_ego_3hop_snapshots",
+    "plot_ego_3hop_aggregate_per_agent",
 ]

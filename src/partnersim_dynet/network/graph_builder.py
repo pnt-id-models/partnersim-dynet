@@ -77,6 +77,7 @@ def prepare_partnerships(partnerships: pd.DataFrame, total_timesteps: int) -> Pa
     PartnershipArrays
         Aligned arrays ready for fast time-based filtering.
     """
+    # required = {"Agent", "PartnerAgent", "StartTime", "EndTime", "ExternalPartner"}
     required = {"Agent", "PartnerAgent", "StartTime", "EndTime"}
     missing = required - set(partnerships.columns)
     if missing:
@@ -87,7 +88,8 @@ def prepare_partnerships(partnerships: pd.DataFrame, total_timesteps: int) -> Pa
 
     # Filter out singleton rows: agents with no partner
     real = partnerships[
-        partnerships["PartnerAgent"].notna() & partnerships["StartTime"].notna()
+        partnerships["PartnerAgent"].notna()
+        & partnerships["StartTime"].notna()  # & ~partnerships["ExternalPartner"].fillna(False)
     ].copy()
 
     agent = real["Agent"].to_numpy(dtype=np.int64)
