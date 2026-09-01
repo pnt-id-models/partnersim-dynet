@@ -69,7 +69,7 @@ def prepare_partnerships(partnerships: pd.DataFrame, total_timesteps: int) -> Pa
         contain columns: Agent, PartnerAgent, StartTime, EndTime.
         Rows representing singleton agents (no partner) are excluded.
     total_timesteps : int
-        Used as the sentinel value for partnerships still active at end
+        Used as the default value for partnerships still active at end
         (so `start <= t < end` queries work uniformly). We do not include
         external partners in the network, so we do not filter them out here.
 
@@ -97,8 +97,8 @@ def prepare_partnerships(partnerships: pd.DataFrame, total_timesteps: int) -> Pa
     partner = real["PartnerAgent"].to_numpy(dtype=np.int64)
     start = real["StartTime"].to_numpy(dtype=np.int32)
 
-    sentinel = total_timesteps + 1
-    end = real["EndTime"].fillna(sentinel).to_numpy(dtype=np.int32)
+    default = total_timesteps + 1
+    end = real["EndTime"].fillna(default).to_numpy(dtype=np.int32)
 
     return PartnershipArrays(agent=agent, partner=partner, start=start, end=end)
 
