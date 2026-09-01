@@ -146,7 +146,7 @@ diagnostics module reads agent_log + PartnershipConfig (no dependency on
 generator state). This means analysis can run on saved outputs from any
 source, not just live generator instances.
 
-## Running tests
+## Running tests (Work in progress)
 
 Fast unit and integration tests (default):
 
