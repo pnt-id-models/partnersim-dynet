@@ -5,8 +5,8 @@ simulation maintains a fixed-capacity population (agents removed at
 MAX_AGE are immediately replaced by new agents at REPLENISHMENT_AGE) and
 records every dissolved or censored partnership as a `PartnershipRecord`.
 
-The output is a pandas DataFrame with one row per partnership (and one row
-per agent who never partnered).
+The output is a pandas DataFrame with one row per partnership and one row
+per agent who never partnered.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ _AGE_GROUP_LABELS_FOR_NUMBA = np.array([*AGE_GROUPS, "75", "Unknown"])
 
 
 class PartnershipGenerator:
-    """Simulates a dynamic partnership network from a PartnershipConfig.
+    """Simulates a dynamic population of sexual partnerships from a PartnershipConfig.
 
     Usage
     -----
@@ -81,17 +81,17 @@ class PartnershipGenerator:
         self._rng = np.random.default_rng(seed)
 
         # Agent log is maintained as a list of dicts, with one entry per agent. Each entry contains demographic info plus entry/exit metadata.
-        # When an agent is removed, their exit info is filled in but the record remains in the log. This allows external partnerships to still produce records with the removed agent's demographics.
+        # When an agent is removed, their exit info is filled in but the record remains in the log.
+        # This allows external partnerships to still produce records with the removed agent's demographics.
         self._agent_log: list[dict] = []
         self._agent_log_idx: dict[int, int] = {}
 
-        # ── Capacity & slot management ──────────────────────────────────
         # Capacity equals initial population size. Removed agents' slots are immediately reused for new agents, so capacity stays constant.
         self.capacity: int = cfg.num_agents
 
-        # ── Agent state arrays ─────────────────────────────────────────
         # Internal sex code: 0=Males, 1=Females (see SEX_CODE_TO_STR).
         # Internal ori code: 0=Opposite-sex, 1=Same-sex, 2=Bisexual.
+        # Internal age is an integer in [MIN_AGE, MAX_AGE]. These arrays are indexed by internal slot.
         self.sex_arr = np.full(self.capacity, -1, dtype=np.int8)
         self.ori_arr = np.full(self.capacity, -1, dtype=np.int8)
         self.age_arr = np.full(self.capacity, -1, dtype=np.int16)
@@ -100,7 +100,8 @@ class PartnershipGenerator:
         self.days_since_last_bday = np.zeros(self.capacity, dtype=np.int16)
 
         # Active flag: False means the slot is empty and should be ignored. True means the slot is occupied by an agent who hasn't yet reached MAX_AGE.
-        # Sexually active flag: True means the agent is eligible to form partnerships. Agents start sexually active if they've hit GUARANTEED_DEBUT_AGE, else they have a debut probability based on their current age.
+        # Sexually active flag: True means the agent is eligible to form partnerships.
+        # Agents start sexually active if they've hit GUARANTEED_DEBUT_AGE, else they have a debut probability based on their current age.
         self.active = np.zeros(self.capacity, dtype=bool)
         self.sexually_active_arr = np.zeros(self.capacity, dtype=bool)
 
@@ -115,7 +116,6 @@ class PartnershipGenerator:
         self.partner_count_arr = np.zeros(self.capacity, dtype=np.int16)
         self.external_count_arr = np.zeros(self.capacity, dtype=np.int16)
 
-        # ── ID & slot mapping ──────────────────────────────────────────
         # Internal slot is for stable agent ID
         self.idx2id = np.zeros(self.capacity, dtype=np.int64)
         # Stable ID is for internal slot
@@ -125,21 +125,16 @@ class PartnershipGenerator:
         # When no slots are freed by removal, next_free_idx advances.
         self.next_free_idx: int = cfg.num_agents
 
-        # ── Partnership tracking ───────────────────────────────────────
-        # partnerships[idx] = {partner_idx: start_time}
-        # external_partner[idx] = {removed_partner_aid: {"start_time": t}}
-        # The split is because removed partners no longer have a slot, so we track them by their stable ID instead.
-
-        # Single dictionaries per slot, populated when needed.
+        # External partnerships are stored separately from active partnerships
+        # because the partner may have been removed from the simulation (e.g. aged out at MAX_AGE) before the record was created.
         self.partnerships: list[dict[int, int]] = [{} for _ in range(self.capacity)]
         self.external_partner: list[dict[int, dict]] = [{} for _ in range(self.capacity)]
 
-        # ── Removed-agent metadata (for external partnership records) ──
+        # Metadata about removed agents, keyed by stable ID. This generates partnership records for external partnerships even after the agent has been removed.
         self.removed_agents_info: dict[int, dict] = {}
 
-        # ── Concurrency state ──────────────────────────────────────────
         # Agents flagged for concurrency: can hold multiple partnerships. Active_concurrent_ids tracks the currently active concurrent set
-        # concurrent_agents_ids is the flagged as concurrent agents set.
+        # concurrent_agents_ids is the flagged as concurrent agents set. Max partners is the per-agent concurrency cap, drawn from a Poisson distribution..
         self.concurrent_agents_ids: set[int] = set()
         self.active_concurrent_ids: set[int] = set()
         self.concurrent_agent_max_partners: dict[int, int] = {}
@@ -148,11 +143,9 @@ class PartnershipGenerator:
         # (Models 2 & 3). Maintains the demographic distribution of the initial concurrent cohort as agents age out and new ones arrive.
         self.concurrent_combo_targets: dict[tuple, int] = {}
 
-        # ── Single-agents tracking ─────────────────────────────────────
         # Set of agent IDs currently unpartnered and sexually active. Used as the initiator pool in the formation phase.
         self.single_agents: set[int] = set()
 
-        # ── Probability lookup caches ──────────────────────────────────
         # Avoid recomputing base probabilities for the same (sex, ori, age_group) tuple every time.
         self._formation_base_cache: dict[tuple, float] = {}
         self._breakage_base_cache: dict[tuple, float] = {}
@@ -161,7 +154,7 @@ class PartnershipGenerator:
         self._formation_probs = cfg.probabilities.build_formation_probs()
         self._breakage_probs = cfg.probabilities.build_breakage_probs()
 
-        # ── Initialise the population ──────────────────────────────────
+        # Initialise the population, concurrency flags, and agent log. This is done in a separate method to keep the constructor clean.
         self._initialise_agents()
         self._initialise_concurrency()
         self._log_initial_cohort()
@@ -174,29 +167,30 @@ class PartnershipGenerator:
         NegativeBinomial(nb_r, nb_p). Sexual debut status drawn from
         the debut schedule.
         """
-        # Uniform distribution across the 6 working-age groups.
-        # The "75" and "Unknown" buckets are simulation-internal and aren't used for initialisation, so we don't include them here.
-        working_groups = [
+        # Uniform distribution across the 6 sexually active age groups. Zip the labels with the lower/upper bounds to get a list of (lo, hi) tuples for sampling.
+        # The "75" and "Unknown" buckets are simulation-internal and are not used for initialisation, so we do not include them here.
+        active_groups = [
             (lo, hi)
             for label, lo, hi in zip(
                 AGE_GROUPS, [16, 25, 35, 45, 55, 65], [24, 34, 44, 54, 64, 74], strict=False
             )
         ]
 
-        # Each group gets an equal share of the initial population, with any remainder distributed one-per-group until it runs out.
-        n_per_group = self.cfg.num_agents // len(working_groups)
-        remainder = self.cfg.num_agents % len(working_groups)
+        # Each sexually active age group gets an equal share of the initial population, with any remainder distributed one-per-group until it runs out.
+        n_per_group = self.cfg.num_agents // len(active_groups)
+        remainder = self.cfg.num_agents % len(active_groups)
 
-        # Iterate through the groups in order, filling slots with agents drawn from the group's age range until we hit num_agents.
-        # This ensures the initial population is exactly num_agents even if the age groups don't divide it evenly.
+        # Iterate through the groups in order, filling slots with agents drawn from the age range of the group until we hit num_agents.
+        # This ensures the initial population is exactly num_agents even if the age groups do not divide it evenly.
         idx = 0
-        for group_idx, (lo, hi) in enumerate(working_groups):
+        for group_idx, (lo, hi) in enumerate(active_groups):
             count = n_per_group + (1 if group_idx < remainder else 0)
             for _ in range(count):
                 if idx >= self.cfg.num_agents:
                     break
 
-                # Demographics and ID mapping. Sex and orientation drawn from distributions given in probabilities.py. Age uniform within the group's range. NB multipliers and concurrency flags are filled in later.
+                # Demographics and ID mapping. Sex and orientation drawn from distributions given in probabilities.py.
+                # Age uniform within the group's range. NB multipliers and concurrency flags are filled in later.
                 self.age_arr[idx] = self._rng.integers(lo, hi + 1)
                 self.sex_arr[idx] = 0 if self._rng.random() < PROPORTION_MALE else 1
                 priors = (
@@ -204,8 +198,9 @@ class PartnershipGenerator:
                 )
                 self.ori_arr[idx] = self._rng.choice([0, 1, 2], p=priors)
 
-                # Birthday phase, uniform within the year
-                self.days_since_last_bday[idx] = self._rng.integers(0, 365)
+                # Birthday phase, uniform within the year. It is 0 to 364 because we want to age up on the 365th day, not the 366th.
+                # Active flag is True for all initial agents.
+                self.days_since_last_bday[idx] = self._rng.uniform(0, 364)
                 self.active[idx] = True
 
                 # Sexual debut: certain after GUARANTEED_DEBUT_AGE, else use cumulative debut probability up to current age. Guaranteed debut is at 21.
@@ -218,7 +213,9 @@ class PartnershipGenerator:
                     )
                     self.sexually_active_arr[idx] = self._rng.random() < cumulative_prob
 
-                # ID mapping
+                # ID mapping: This is done after the demographics are set so that the ID mapping reflects the actual agent in the slot.
+                # The internal slot index is `idx`, and the stable agent ID is `aid`.
+                # The first `num_agents` agents get IDs 1..num_agents, and new agents get incrementing IDs starting from num_agents + 1.
                 aid = idx + 1
                 self.idx2id[idx] = aid
                 self.id2idx[aid] = idx
@@ -237,12 +234,13 @@ class PartnershipGenerator:
             chosen = self._rng.choice(self.cfg.num_agents, size=n_high, replace=False)
             self.high_active_arr[chosen] = True
 
+    # We use this method to separate the concurrency logic from the agent initialisation
     def _initialise_concurrency(self) -> None:
         """Flag the initial concurrency-allowed cohort.
 
         The number selected is `round(num_agents * concurrency_prop)`.
         The selection method depends on `cfg.concurrency_model` and
-        implemented using the pure function in `concurrency.py`.
+        implemented using the function in `concurrency.py`.
         """
         if self.cfg.concurrency_prop <= 0:
             return
@@ -267,17 +265,20 @@ class PartnershipGenerator:
             rng=self._rng,
         )
 
-        # Flag the selected agents as concurrent and set their concurrency caps. Also snapshot the per-combo targets based on the initial cohort's demographics, so we can maintain the distribution during replenishment.
+        # Flag the selected agents as concurrent and set their concurrency caps.
+        # Also snapshot the per-combo targets based on the initial cohort's demographics to maintain the distribution during replenishment.
         for idx in selected_idxs:
             aid = int(self.idx2id[idx])
             self.concurrent_agents_ids.add(aid)
             self.active_concurrent_ids.add(aid)
             self.concurrent_agent_max_partners[aid] = self._draw_concurrency_cap()
 
+            # Snapshot the per-combo target counts for stratified replenishment (Models 2 & 3).
             ag = age_group_labels[idx]
             key = (ag, int(self.sex_arr[idx]), int(self.ori_arr[idx]))
             self.concurrent_combo_targets[key] = self.concurrent_combo_targets.get(key, 0) + 1
 
+    # Log the initial cohort after concurrency is set up, so the log reflects the correct concurrency status at timestep 1.
     def _log_initial_cohort(self) -> None:
         """Write agent log entries for the initial cohort.
 
@@ -286,17 +287,22 @@ class PartnershipGenerator:
         for idx in range(self.cfg.num_agents):
             self._log_agent_entry(idx, entry_timestep=1)
 
+    # Draw NB heterogeneity multipliers, normalised by adding 1 so the minimum value is 1 and the mean is 2.
+    # NB distribution has mean nb_r * (1 - nb_p) / nb_p.
     def _sample_nb(self, size: int) -> np.ndarray:
-        """Draw NB heterogeneity multipliers, normalised so the mean is 1.
+        """Draw NB heterogeneity multipliers, normalised so the mean is 2.
 
         The raw NB has mean nb_r * (1 - nb_p) / nb_p. Dividing by that
-        gives a multiplier with mean 1, so the population-average
-        probability matches the base table.
+        gives a multiplier with mean 2 and ensures that the sampled values are
+        always 1 and above.
         """
         raw = self._rng.negative_binomial(self.cfg.nb_r, self.cfg.nb_p, size=size)
         mean_nb = self.cfg.nb_r * (1 - self.cfg.nb_p) / self.cfg.nb_p
         return 1 + raw / mean_nb
 
+    # Draw an agent's per-step concurrency cap, which is the maximum number of concurrent partnerships they can hold.
+    # The cap is drawn from a Poisson distribution with mean `lambda_concurrency`, but it is floored at `concurrency_min_partner_cap`
+    # to ensure a minimum level of concurrency for eligible agents.
     def _draw_concurrency_cap(self) -> int:
         """Draw an agent's per-step concurrency cap.
 
@@ -305,8 +311,8 @@ class PartnershipGenerator:
         poisson_draw = int(self._rng.poisson(self.cfg.lambda_concurrency))
         return max(self.cfg.concurrency_min_partner_cap, poisson_draw)
 
-    # Probability lookups
-
+    # Probability lookups created once per agent per timestep, so we cache the base values for each (sex, ori, age_group) tuple.
+    # The final effective probability is computed by applying the NB multiplier and high-activity boost (if activated), then clipping to [prob_floor, prob_ceiling].
     def _formation_prob(self, sex_code: int, ori_code: int, age_group: str, idx: int) -> float:
         """Effective per-step formation probability for agent at `idx`.
 
@@ -322,6 +328,7 @@ class PartnershipGenerator:
             sex_str = SEX_CODE_TO_STR[sex_code]
             ori_str = ORI_CODE_TO_STR[ori_code]
             base = self._formation_probs[sex_str][ori_str].get(age_group, 0.0)
+            # Cache the base value for future lookups to avoid repeated dictionary access and computation for the same demographic tuple.
             self._formation_base_cache[key] = base
 
         prob = base * self.nb_mult_form[idx]
@@ -330,6 +337,8 @@ class PartnershipGenerator:
 
         return max(self.cfg.prob_floor, min(float(prob), self.cfg.prob_ceiling))
 
+    # Precompute the base breakage probabilities for all active agents in a vectorised manner.
+    # This avoids repeated lookups and allows for efficient application of NB multipliers and high-activity boosts across the entire active cohort.
     def _precompute_all_breakage_probs(
         self,
         active_idx: np.ndarray,
@@ -337,10 +346,10 @@ class PartnershipGenerator:
     ) -> np.ndarray:
         """Vectorised base breakage probability lookup for all active agents.
 
-        Returns an array of shape (capacity,), with the per-agent base
+        Returns an array of shape which is the capacity, with the per-agent base
         breakage probability filled in for active slots and 0 elsewhere.
 
-        Pre-build a flat lookup table once (4 ori × 2 sex × 6
+        Pre-build a flat lookup table once (3 ori × 2 sex × 6
         age groups), then use NumPy fancy indexing to pull the right base
         for every agent in one operation. Apply the NB multiplier and
         high-activity boost (if enabled) vectorised, then clip.
@@ -354,9 +363,12 @@ class PartnershipGenerator:
         sex_codes = self.sex_arr[active_idx]
         ori_codes = self.ori_arr[active_idx]
         age_codes = age_group_codes_arr[active_idx]
+
+        # If the base table has not been built yet, build it once and cache it.
+        # This avoids repeated dictionary lookups for each agent and allows for efficient vectorised access.
         if not hasattr(self, "_breakage_base_table"):
             n_age = len(_AGE_GROUP_LABELS_FOR_NUMBA)  # 8 = 6 groups + "75" + "Unknown"
-            table = np.zeros((n_age, 2, 3), dtype=np.float64)
+            table = np.zeros((n_age, 2, 3), dtype=np.float64)  # age_group x sex x ori
             for age_code in range(n_age):
                 age_label = _AGE_GROUP_LABELS_FOR_NUMBA[age_code]
                 for sc in (0, 1):
@@ -367,10 +379,10 @@ class PartnershipGenerator:
                             str(age_label), 0.0
                         )
             self._breakage_base_table = table
-        # Fancy-index into the table: one base per active agent
+        # Fancy-index into the table: one base per active agent to efficiently compute the effective breakage probabilities in a vectorised manner.
         base_per_agent = self._breakage_base_table[age_codes, sex_codes, ori_codes]
 
-        # Apply per-agent NB multiplier
+        # Apply per-agent NB multiplier to the base breakage probabilities. This accounts for individual heterogeneity in breakage risk.
         eff = base_per_agent * self.nb_mult_break[active_idx]
 
         # Apply high-activity boost where applicable
@@ -389,7 +401,9 @@ class PartnershipGenerator:
         breakage_probs[active_idx] = eff
         return breakage_probs
 
-    # Agent log management
+    # Agent log management: This is a list of dicts, one per agent, with demographic info and entry/exit metadata.
+    # This logging is separate from the partnership records and allows for tracking of agents who have been removed from the simulation,
+    # so that external partnerships can still be recorded with their demographics.
 
     def _log_agent_entry(self, idx: int, entry_timestep: int) -> None:
         """Record the entry of an agent in the agent log.
@@ -419,6 +433,7 @@ class PartnershipGenerator:
         )
         self._agent_log_idx[aid] = len(self._agent_log) - 1
 
+    # Log the exit of an agent in the agent log. This is called when an agent is removed (e.g., aged out at MAX_AGE).
     def _log_agent_exit(self, aid: int, exit_timestep: int, exit_age: int) -> None:
         """Update the agent log when an agent is removed."""
         log_idx = self._agent_log_idx.get(aid)
@@ -426,8 +441,7 @@ class PartnershipGenerator:
             self._agent_log[log_idx]["ExitTimestep"] = exit_timestep
             self._agent_log[log_idx]["ExitAge"] = exit_age
 
-    # Agent removal and replenishment
-
+    # Agent removal and replenishment but keep the same slot index. This is done to maintain a fixed-capacity population while allowing for demographic turnover.
     def _remove_agent(self, idx: int, t: int) -> None:
         """Remove agent at slot `idx` at timestep `t`.
 
@@ -464,6 +478,7 @@ class PartnershipGenerator:
                 ):
                     self.single_agents.add(int(self.idx2id[partner_idx]))
 
+        # This agent is now removed: clear their partnerships, mark inactive, remove from single_agents and active_concurrent_ids, and log exit.
         self.partnerships[idx].clear()
         self.external_partner[idx].clear()
         self.active[idx] = False
@@ -473,6 +488,7 @@ class PartnershipGenerator:
         if old_aid in self.id2idx:
             del self.id2idx[old_aid]
 
+    # Create a new agent in a freed slot, with demographics drawn from the priors and NB multipliers.
     def _add_agent(self, idx: int, t: int) -> None:
         """Create a new agent at slot `idx` at timestep `t`.
 
@@ -480,17 +496,20 @@ class PartnershipGenerator:
         demographic priors are drawn fresh. Concurrency is decided
         separately by `_maybe_flag_replenishment_concurrent`.
         """
+        # Assign a new stable agent ID and increment the next_agent_id counter. Update the idx2id and id2idx mappings to reflect the new agent.
         new_aid = self.next_agent_id
         self.next_agent_id += 1
         self.idx2id[idx] = new_aid
         self.id2idx[new_aid] = idx
 
+        # Demographics and NB multipliers for the new agent. Age is set to REPLENISHMENT_AGE, birthday is random
         self.age_arr[idx] = REPLENISHMENT_AGE
-        self.days_since_last_bday[idx] = self._rng.integers(0, 365)
+        self.days_since_last_bday[idx] = self._rng.uniform(0, 364)
         self.sex_arr[idx] = 0 if self._rng.random() < PROPORTION_MALE else 1
         priors = ORIENTATION_PRIORS_MALE if self.sex_arr[idx] == 0 else ORIENTATION_PRIORS_FEMALE
         self.ori_arr[idx] = self._rng.choice([0, 1, 2], p=priors)
 
+        # Draw NB heterogeneity multipliers for formation and breakage, reset high-activity flag, clear partnerships, reset counts, mark active.
         self.nb_mult_form[idx] = self._sample_nb(1)[0]
         self.nb_mult_break[idx] = self._sample_nb(1)[0]
         self.high_active_arr[idx] = False
@@ -500,13 +519,14 @@ class PartnershipGenerator:
         self.external_count_arr[idx] = 0
         self.active[idx] = True
 
-        # Sexual debut: new agents are exactly REPLENISHMENT_AGE, so use
-        # the age-16 debut probability.
+        # Sexual debut: new agents are exactly REPLENISHMENT_AGE, so use the age-16 debut probability.
         debut_prob = SEXUAL_DEBUT_PROBABILITIES.get(REPLENISHMENT_AGE, 0.0)
         self.sexually_active_arr[idx] = self._rng.random() < debut_prob
         if self.sexually_active_arr[idx]:
             self.single_agents.add(new_aid)
 
+    # This method decides whether a newly replenished agent should be flagged as concurrent based on the configured concurrency model
+    # and the current demographic distribution of active concurrent agents. It updates the relevant sets and counts if the agent is flagged.
     def _maybe_flag_replenishment_concurrent(
         self, idx: int, current_combo_counts: dict[tuple, int]
     ) -> None:
@@ -547,6 +567,8 @@ class PartnershipGenerator:
             self.concurrent_agent_max_partners[new_aid] = self._draw_concurrency_cap()
             current_combo_counts[combo_key] = current_combo_counts.get(combo_key, 0) + 1
 
+    # Count the currently active concurrent agents per (age_group, sex, ori) combination.
+    # This is used for Models 2 & 3 to maintain the demographic distribution of concurrent agents during replenishment.
     def _count_active_concurrent_per_combo(self) -> dict[tuple, int]:
         """Count currently-active concurrent agents per (age_group, sex, ori) combo."""
         counts: dict[tuple, int] = {}
@@ -560,6 +582,7 @@ class PartnershipGenerator:
             counts[key] = counts.get(key, 0) + 1
         return counts
 
+    # Simulate the full partnership dynamics over the configured number of timesteps, returning a DataFrame of all partnerships formed, dissolved, or censored.
     def simulate_partnerships(self) -> pd.DataFrame:
         """
         Run the full simulation and return the partnership DataFrame.
@@ -573,6 +596,8 @@ class PartnershipGenerator:
         partnership_data: list[PartnershipRecord] = []
         T = self.cfg.total_timesteps
 
+        # For each timestep, we perform the following phases:
+        # ageing, removal of old agents, replenishment of new agents, and building helper arrays for partnership formation and breakage.
         for t in range(1, T + 1):
             if t % 100 == 0:
                 logger.info(
@@ -584,16 +609,19 @@ class PartnershipGenerator:
                     len(self.single_agents),
                 )
 
-            # ── PHASE 1: AGEING ───────────────────────────────────────
+            # Aging: increment days since last birthday for all active agents. If an agent has reached 365 days, they age up by 1 year and reset their birthday counter.
             active_idx = np.where(self.active)[0]
             self.days_since_last_bday[active_idx] += 1
 
+            # Check for agents who have reached their birthday and age them up. If they are newly age-eligible for sexual debut, check that too.
+            # If the debut probability is greater than 0 and a random draw is less than that probability, mark the agent as sexually active
+            # and add them to the single_agents set if they have no partners.
             birthday_mask = self.days_since_last_bday[active_idx] >= 365
             if birthday_mask.any():
                 aged_indices = active_idx[birthday_mask]
                 self.age_arr[aged_indices] += 1
                 self.days_since_last_bday[aged_indices] = 0
-                # Sexual debut roll for any newly age-eligible agent.
+                # Sexual debut check for any newly age-eligible agent.
                 for idx in aged_indices:
                     if not self.sexually_active_arr[idx]:
                         age = int(self.age_arr[idx])
@@ -611,43 +639,47 @@ class PartnershipGenerator:
                             ):
                                 self.single_agents.add(aid)
 
-            # Precompute age-group codes once per timestep — used by
-            # multiple phases below.
+            # Precompute age-group codes once per timestep to optimise the breakage probability lookups.
+            # This avoids repeated calls to `fast_digitise_age_group` for each agent during the breakage phase.
             age_group_codes_arr = np.empty(self.capacity, dtype=np.int32)
             age_group_codes_arr[active_idx] = fast_digitise_age_group(
                 self.age_arr[active_idx].astype(np.int16)
             )
 
-            # ── PHASE 2: REMOVAL ──────────────────────────────────────
+            # Removal: identify agents who have exceeded MAX_AGE and are still active.
+            # Remove them from the simulation, logging their exit and updating any partnerships they had.
             removal_mask = (self.age_arr > MAX_AGE) & self.active
             to_remove_idx = list(np.where(removal_mask)[0])
             n_removed = len(to_remove_idx)
             for old_idx in to_remove_idx:
                 self._remove_agent(old_idx, t)
 
-            # ── PHASE 3: REPLENISHMENT ────────────────────────────────
-            # Compute per-combo concurrent counts ONCE before the loop,
-            # then update in-place as each replenishment is processed.
+            # Replinishment: for each removed agent, create a new agent in the same slot with demographics drawn from the priors.
+            # Compute per-combo concurrent counts ONCE before the loop, then update in-place as each replenishment is processed.
             if self.cfg.concurrency_model in (2, 3):
                 current_combo_counts = self._count_active_concurrent_per_combo()
             else:
                 current_combo_counts = {}
 
+            # Freed slots are the indices of the removed agents. Agents are popped from this to fill new agents into the same slots.
+            # If there are no freed slots left, use next_free_idx to assign a new slot.
             freed_slots = list(to_remove_idx)
             for _ in range(n_removed):
                 idx = freed_slots.pop() if freed_slots else self.next_free_idx
                 if not freed_slots and idx == self.next_free_idx:
                     self.next_free_idx += 1
-
+                # Add a new agent in the freed slot, flag them for concurrency if applicable, and log their entry.
                 self._add_agent(idx, t)
                 self._maybe_flag_replenishment_concurrent(idx, current_combo_counts)
                 self._log_agent_entry(idx, entry_timestep=t)
 
-            # ── PHASE 4: BUILD HELPER ARRAYS ──────────────────────────
+            # Helper arrays for partnership formation and breakage. These are used to efficiently compute probabilities and eligibility for forming or breaking partnerships.
             agent_idx = np.where(self.active)[0]
             total_counts_arr = self.partner_count_arr + self.external_count_arr
             formed_bool = np.zeros(self.capacity, dtype=bool)
 
+            # Precompute the effective breakage probabilities for all active agents in a vectorised manner.
+            # This avoids repeated lookups and allows for efficient application of NB multipliers and high-activity boosts across the entire active cohort.
             breakage_probs_arr = self._precompute_all_breakage_probs(agent_idx, age_group_codes_arr)
 
             # Compatibility masks per (sex_code, ori_code) of focal agent.
@@ -684,10 +716,10 @@ class PartnershipGenerator:
                 base_eligible_mask[idx] = total_counts_arr[idx] < cap and not formed_bool[idx]
             base_candidate_idx = np.where(base_eligible_mask)[0].astype(np.int32)
 
-            # ── PHASE 5: PARTNERSHIP FORMATION ────────────────────────
+            # Partnership formation: iterate through the initiator pool, draw a partner from the candidate pool, and commit the partnership.
             current_candidate_idx = base_candidate_idx.copy()
 
-            # Initiator pool: singles + concurrent agents not yet at cap.
+            # Initiator pool: singles + concurrent agents not yet at capacity.
             initiators = set(self.single_agents)
             for aid in self.concurrent_agents_ids:
                 if aid not in self.id2idx:
@@ -709,11 +741,14 @@ class PartnershipGenerator:
                 if formed_bool[agent_idx_internal]:
                     continue
 
-                # Re-check eligibility (state may have changed mid-phase).
+                # Re-check eligibility as the candidate pool may have changed since the initiator list was built.
                 current_internal_count = int(self.partner_count_arr[agent_idx_internal])
                 current_external_count = len(self.external_partner[agent_idx_internal])
+                # Total partner count is the sum of internal and external partnerships for the agent.
+                # This is used to determine if they can form a new partnership based on their concurrency cap.
                 total_partner_count = current_internal_count + current_external_count
 
+                # Determine if the agent can attempt to form a new partnership based on their concurrency status and current partner count.
                 if aid in self.concurrent_agents_ids:
                     cap = self.concurrent_agent_max_partners.get(
                         aid, self.cfg.concurrency_min_partner_cap
@@ -724,13 +759,15 @@ class PartnershipGenerator:
                 if not can_attempt:
                     continue
 
+                # Build the formation probability for this agent based on their demographics and heterogeneity.
+                # If a random draw exceeds this probability, skip to the next initiator.
                 sc = int(self.sex_arr[agent_idx_internal])
                 oc = int(self.ori_arr[agent_idx_internal])
                 age_group = _AGE_GROUP_LABELS_FOR_NUMBA[age_group_codes_arr[agent_idx_internal]]
                 formation_prob = self._formation_prob(
                     sc, oc, str(age_group), idx=agent_idx_internal
                 )
-                if self._rng.random() <= formation_prob:
+                if self._rng.random() >= formation_prob:
                     continue
 
                 # Remove self from the candidate pool for this draw.
@@ -750,7 +787,8 @@ class PartnershipGenerator:
                 if candidate_idx.size == 0:
                     continue
 
-                # Restrict to demographically compatible agents.
+                # Restrict to demographically compatible agents still in the candidate pool.
+                # This ensures that the selected partner is compatible with the initiator's sex and orientation.
                 candidate_idx = np.intersect1d(
                     candidate_idx, compat_idx[(sc, oc)], assume_unique=True
                 )
@@ -758,6 +796,7 @@ class PartnershipGenerator:
                     continue
 
                 # Weight by Gaussian age-difference kernel.
+                # The kernel is centred at 0, so the probability of forming a partnership decreases with increasing age difference.
                 age_diffs = self.age_arr[candidate_idx] - int(self.age_arr[agent_idx_internal])
                 weights = fast_normal_pdf(
                     age_diffs.astype(np.float64),
@@ -768,7 +807,8 @@ class PartnershipGenerator:
                 probs = weights / wsum if (wsum > 0 and not np.isnan(wsum)) else None
                 partner_internal = int(self._rng.choice(candidate_idx, p=probs))
 
-                # Commit the partnership.
+                # Commit the partnership: record the start time, update the partnership dicts,
+                # increment partner counts, mark both as formed, and remove from single_agents.
                 self.partnerships[agent_idx_internal][partner_internal] = t
                 self.partnerships[partner_internal][agent_idx_internal] = t
                 self.partner_count_arr[agent_idx_internal] += 1
@@ -778,7 +818,8 @@ class PartnershipGenerator:
                 self.single_agents.discard(int(self.idx2id[agent_idx_internal]))
                 self.single_agents.discard(int(self.idx2id[partner_internal]))
 
-                # Remove both from the running candidate pool.
+                # Remove both from the single candidate pool to prevent them from being selected again in this timestep.
+                # This ensures that once an agent has formed a partnership, they are no longer eligible to form another in the same timestep.
                 for remove_idx in (agent_idx_internal, partner_internal):
                     pos = np.searchsorted(current_candidate_idx, remove_idx)
                     if (
@@ -792,11 +833,13 @@ class PartnershipGenerator:
                             ]
                         )
 
-            # ── PHASE 6: INTERNAL BREAKAGE (vectorised) ───────────────
-            # Collect every undirected partnership pair (a < b) into arrays, run the vectorized hazard, then process dissolutions.
+            # Internal breakage: for each undirected partnership, compute the effective breakage probability and determine if the partnership dissolves.
+            # Collect every undirected partnership pair (a < b) into arrays, run the vectorised hazard, then process partnership dissolutions.
             internal_pairs_a, internal_pairs_b, internal_durations, internal_probs = (
                 self._collect_internal_partnerships(t, agent_idx, breakage_probs_arr)
             )
+            # If there are any internal partnerships, compute the dissolution events using the vectorised hazard function.
+            # For each partnership that dissolves, record the dissolution and update the agent states accordingly.
             if len(internal_pairs_a) > 0:
                 uniforms = self._rng.random(len(internal_pairs_a))
                 dissolves = compute_breakage_events(
@@ -806,13 +849,16 @@ class PartnershipGenerator:
                     gamma=self.cfg.dissolution_gamma,
                     uniforms=uniforms,
                 )
-                # Process the True entries
+                # Process the dissolved partnerships: for each partnership that dissolves, record the dissolution event and update the agent states to reflect the end of the partnership.
                 for k in np.where(dissolves)[0]:
                     a, b = int(internal_pairs_a[k]), int(internal_pairs_b[k])
                     start_time = t - int(internal_durations[k])
                     self._record_and_dissolve_internal(a, b, start_time, t, partnership_data)
 
-            # ── PHASE 7: EXTERNAL BREAKAGE (vectorised) ───────────────
+            # External breakage: for each external partnership, compute the effective breakage probability and determine if the partnership dissolves.
+            # Collect every external partnership into arrays, run the vectorised hazard, then process partnership dissolutions.
+            # External partnerships are those where the partner has already been removed from the simulation, but the initiator still tracks them in
+            # their `external_partner` dict. This allows for proper dissolution records even after one partner has exited the simulation.
             ext_focal, ext_partner_aid, ext_durations, ext_probs = (
                 self._collect_external_partnerships(t, agent_idx, breakage_probs_arr)
             )
@@ -835,12 +881,15 @@ class PartnershipGenerator:
 
             pass
 
-        # ── FINALIsATION ──────────────────────────────────────────────
+        # Finalise the partnership records at the end of the simulation: add censored records for any ongoing partnerships and singleton records for agents who never partnered.
         self._add_censored_records(partnership_data)
         self._add_singleton_records(partnership_data)
         return self._build_partnership_dataframe(partnership_data)
 
-    # Breakage phase helpers (vectorised)
+    # Breakage phase helpers: Vectorised collection of internal and external partnerships into aligned arrays for efficient processing of breakage events.
+
+    # Internal partnerships are undirected and stored in the `partnerships` dict of each agent.
+    # Each partnership is recorded exactly once (order a < b) to avoid double-counting.
 
     def _collect_internal_partnerships(
         self,
@@ -851,8 +900,8 @@ class PartnershipGenerator:
         """Gather every undirected internal partnership into parallel arrays.
 
         Iterates active agents and their partnership dicts once, recording
-        each undirected pair exactly once (canonical order a < b). For
-        each pair, the focal agent's base breakage probability is used —
+        each undirected pair exactly once (order a < b). For
+        each pair, the initiator agent's base breakage probability is used —
         the algorithm draws from the focal agent's perspective.
 
         Returns
@@ -870,6 +919,8 @@ class PartnershipGenerator:
                     continue
                 pairs_a.append(int(agent_internal))
                 pairs_b.append(int(partner_internal))
+                # Compute the duration of the partnership as the difference between the current timestep and the recorded start time.
+                # This is used in the breakage hazard calculation.
                 durations.append(t - int(start_time))
                 base_probs.append(float(breakage_probs_arr[agent_internal]))
         return (
@@ -879,6 +930,8 @@ class PartnershipGenerator:
             np.asarray(base_probs, dtype=np.float64),
         )
 
+    # External partnerships are directed and stored in the `external_partner` dict of each agent.
+    # Each external partnership is recorded exactly once, and the focal agent's base breakage probability is used for the hazard calculation.
     def _collect_external_partnerships(
         self,
         t: int,
@@ -903,6 +956,8 @@ class PartnershipGenerator:
             for partner_aid, meta in self.external_partner[agent_internal].items():
                 focal.append(int(agent_internal))
                 partner_aids.append(int(partner_aid))
+                # Compute the duration of the partnership as the difference between the current timestep and the recorded start time.
+                # This is used in the breakage hazard calculation.
                 durations.append(t - int(meta["start_time"]))
                 base_probs.append(float(breakage_probs_arr[agent_internal]))
         return (
@@ -912,6 +967,8 @@ class PartnershipGenerator:
             np.asarray(base_probs, dtype=np.float64),
         )
 
+    # Record and dissolve partnerships: These methods handle the recording of partnership dissolution events and update the agent states accordingly.
+    # They create `PartnershipRecord` entries for each dissolved partnership, whether internal or external, and manage the partner counts and single agent tracking.
     def _record_and_dissolve_internal(
         self,
         a: int,
@@ -989,6 +1046,8 @@ class PartnershipGenerator:
         ):
             self.single_agents.add(int(self.idx2id[focal_idx]))
 
+    # Partnership type helpers: Determine the type of partnership based on the sexes of the two agents involved.
+    # This is used for recording the relationship type in the partnership records.
     def _partnership_type_internal(self, a: int, b: int) -> str:
         return self._partnership_type_strs(
             SEX_CODE_TO_STR[int(self.sex_arr[a])],
@@ -1003,7 +1062,8 @@ class PartnershipGenerator:
             return "M-M"
         return "F-F"
 
-    # Finalisation: censored and singleton records
+    # Finalisation: censored and single agent records. At the end of the simulation, add records for
+    # any partnerships that are still active (censored) and for any agents who never partnered (single agents).
 
     def _add_censored_records(self, out: list[PartnershipRecord]) -> None:
         """Add records for partnerships still active at end-of-simulation."""
@@ -1120,6 +1180,8 @@ class PartnershipGenerator:
                 )
             )
 
+    # Build the final partnership DataFrame from the list of PartnershipRecords.
+    # This method converts the list of records into a pandas DataFrame with capitalised column names for downstream analysis and display.
     def _build_partnership_dataframe(self, records: list[PartnershipRecord]) -> pd.DataFrame:
         """Convert PartnershipRecords to a capitalised-column DataFrame."""
         df = pd.DataFrame(
@@ -1145,7 +1207,10 @@ class PartnershipGenerator:
         )
         return df
 
-    # Public accessors
+    # Agent log: This method returns the agent log as a pandas DataFrame, providing a summary of all agents who were ever in the simulation,
+    # including their entry and exit timestamps, as well as immutable demographic and heterogeneity attributes.
+    #
+    # Active agents at the end of the simulation will have NaN values for their exit timestamps and ages.
 
     def get_agent_log(self) -> pd.DataFrame:
         """Return the agent log as a DataFrame.
