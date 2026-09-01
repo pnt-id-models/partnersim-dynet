@@ -1,19 +1,7 @@
 """Temporal network metrics for partnership simulations.
 
-The main entry point is `compute_temporal_metrics`, which produces a
-per-timestep DataFrame with degree statistics, connected
-components, clustering, and path-length metrics.
+NOTE: Not all metrics are used in the current plots; some are placeholders for future work.
 
-For static (single-timestep) analysis, the per-metric functions in this
-module work on any `networkx.Graph`. Pass them a graph from
-`build_graph_at`
-
-Design
-------
-- Components are tracked event-by-event using a counter of edges.
-  Graph is not rebuilt from scratch each timestep, instead we apply the start/end events for that step.
-- Uses sampled Breadth-First Search from a random sample of LCC nodes. Each source's
-  mean distance to others is computed, then averaged across sources.
 """
 
 from __future__ import annotations
@@ -33,6 +21,7 @@ from partnersim_dynet.network.graph_builder import (
 )
 
 
+# Attach agent demographics to a degree DataFrame (used by both snapshot and window views)
 def _attach_demographics(
     degrees: pd.DataFrame,
     agent_log: pd.DataFrame,
@@ -94,6 +83,7 @@ def degree_stats(G: nx.Graph) -> tuple[float, int, int, float]:
     return avg, mx, active, med
 
 
+# Degree stats for concurrent and monogamous agents only (degree >= 2 or degree == 1, respectively)
 def degree_stats_concurrent(G: nx.Graph) -> tuple[float | None, float | None, int]:
     """Mean/median degree among concurrent agents only (degree >= 2).
 
@@ -107,6 +97,7 @@ def degree_stats_concurrent(G: nx.Graph) -> tuple[float | None, float | None, in
     return float(np.mean(concurrent_degs)), float(np.median(concurrent_degs)), len(concurrent_degs)
 
 
+# Degree stats for monogamous agents only (degree == 1)
 def degree_stats_monogamous(G: nx.Graph) -> tuple[float | None, float | None, int]:
     """Mean/median degree among monogamous agents only (degree == 1).
 
@@ -119,57 +110,13 @@ def degree_stats_monogamous(G: nx.Graph) -> tuple[float | None, float | None, in
     return float(np.mean(monogamous_degs)), float(np.median(monogamous_degs)), len(monogamous_degs)
 
 
-def component_stats(G: nx.Graph) -> tuple[int, int, float]:
-    """Return (num_components, largest_component_size, mean_component_size)."""
-    comps = list(nx.connected_components(G))
-    if not comps:
-        return 0, 0, 0.0
-    sizes = [len(c) for c in comps]
-    return len(comps), max(sizes), float(np.mean(sizes))
-
-
-def transitivity(G: nx.Graph) -> float:
-    """Global clustering: 3 * triangles / triads.
-
-    More informative than per-node average clustering on sparse networks
-    because it ignores nodes that can't form triangles (degree < 2).
-    Returns 0 for graphs with no edges.
-    """
-    if G.number_of_edges() == 0:
-        return 0.0
-    return nx.transitivity(G)
-
-
-def density(G: nx.Graph) -> float:
-    """Fraction of possible edges that are realised: 2|E| / (n(n-1))."""
-    n = G.number_of_nodes()
-    if n < 2:
-        return 0.0
-    return (2.0 * G.number_of_edges()) / (n * (n - 1))
-
-
+# Weighted average path length across all components, size-weighted (UNUSED in current plots PLACEHOLDER ONLY)
 def weighted_avg_path_length(
     G: nx.Graph,
     sample_size: int,
     rng: np.random.Generator,
 ) -> float:
-    """Average shortest path length across all components, size-weighted.
-
-    For each connected component:
-    - Size 1: contributes 0 (no path)
-    - Size 2: contributes 1 (trivial)
-    - Size 3-5: exact APL (cheap, deterministic)
-    - Size >5: sampled APL using ``sample_size`` sources
-
-    Returns the size-weighted mean across all components. Weights are
-    the number of pairs per component (size choose 2), so larger
-    components dominate. Returns 0.0 if the graph has no edges.
-
-    Useful as a complement to ``sampled_avg_path_length`` (which only
-    looks at the largest component): this metric tells you about
-    typical connectivity across the whole network, not just the
-    biggest connected piece.
-    """
+    """Average shortest path length across all components, size-weighted."""
     if G.number_of_edges() == 0:
         return 0.0
 
@@ -188,10 +135,10 @@ def weighted_avg_path_length(
 
         subg = G.subgraph(comp_nodes)
         if n <= 5:
-            # Exact APL: cheap and deterministic
+            #
             comp_apl = float(nx.average_shortest_path_length(subg))
         else:
-            # Sampled APL using same approach as sampled_avg_path_length
+            #
             k = min(sample_size, n)
             sources = rng.choice(list(comp_nodes), size=k, replace=False)
             source_means: list[float] = []
@@ -208,7 +155,7 @@ def weighted_avg_path_length(
     return total_weighted_sum / total_pairs if total_pairs > 0 else 0.0
 
 
-# Main driver: time series of metrics
+# Main driver function for temporal metrics
 def compute_temporal_metrics(
     partnerships: PartnershipArrays,
     active: ActiveIntervals,
@@ -216,39 +163,7 @@ def compute_temporal_metrics(
     apl_sample_size: int = 50,
     rng_seed: int = 0,
 ) -> pd.DataFrame:
-    """Compute per-timestep network metrics for the full simulation.
-
-    The graph is maintained incrementally: edge multiplicities are
-    tracked in a Counter, and the simple `nx.Graph` is updated whenever
-    multiplicity transitions 0→1 (add edge) or 1→0 (remove edge). Nodes
-    are synced to `active.active_at(t)` once per timestep.
-
-    Parameters
-    ----------
-    partnerships : PartnershipArrays
-        Output of `prepare_partnerships`.
-    active : ActiveIntervals
-        Output of `ActiveIntervals.from_agent_log`. Defines the node universe.
-    total_timesteps : int
-        Number of timesteps to compute metrics for (1..total_timesteps).
-    apl_sample_size : int
-        Number of LCC source nodes to sample for the mean-pairwise-distance
-        estimate. 50 is a good default; larger sizes reduce variance but
-        increase per-timestep cost linearly.
-    _sample_size : int
-        Number of LCC source nodes to sample
-    rng_seed : int
-        Seed for the source-node sampling. Different seeds give different
-        APL estimates within sampling noise.
-
-    Returns
-    -------
-    DataFrame
-        Columns: t, num_nodes, num_edges, active_nodes, avg_degree,
-        max_degree,new_edges, lost_edges, num_components,
-        largest_component_size, mean_component_size, transitivity,
-        and avg_path_length
-    """
+    """Compute per-timestep network metrics for the full simulation."""
     rng = np.random.default_rng(rng_seed)
 
     G = nx.Graph()
@@ -262,7 +177,7 @@ def compute_temporal_metrics(
     metrics: dict[str, list] = defaultdict(list)
 
     for t in range(1, total_timesteps + 1):
-        # ── (1) Process end events at this timestep ─────────────────
+        # Process end events first, then sync node universe, then process start events.
         # Ends come before starts at the same t (see iter_partnership_events).
 
         step_lost = 0
@@ -277,7 +192,7 @@ def compute_temporal_metrics(
                         G.remove_edge(ev.agent_a, ev.agent_b)
                     step_lost += 1
 
-        # ── (2) Sync node universe to active-at-t ───────────────────
+        # Sync the node universe to match the current active set at this timestep
         active_now = active.active_at(t)
         to_add = active_now - currently_in_G
         to_remove = currently_in_G - active_now
@@ -292,7 +207,7 @@ def compute_temporal_metrics(
                 G.remove_node(n)
         currently_in_G = active_now
 
-        # ── (3) Process start events at this timestep ───────────────
+        # Process start events, adding edges only if both endpoints are currently active
         step_new = 0
         for ev in events_by_t.get(t, []):
             if ev.kind != "start":
@@ -308,9 +223,8 @@ def compute_temporal_metrics(
                 step_new += 1
             edge_mult[key] += 1
 
-        # ── (4) Compute per-step metrics ────────────────────────────
+        # Compute metrics for this timestep
         avg_deg, max_deg, n_active, med_deg = degree_stats(G)
-        n_comp, lcc_size, mean_comp = component_stats(G)
         mean_c, median_c, n_c = degree_stats_concurrent(G)
         mean_m, median_m, n_m = degree_stats_monogamous(G)
         if t % PATH_LENGTH_STRIDE == 0:
@@ -325,12 +239,7 @@ def compute_temporal_metrics(
         metrics["max_degree"].append(max_deg)
         metrics["new_edges"].append(step_new)
         metrics["lost_edges"].append(step_lost)
-        metrics["num_components"].append(n_comp)
-        metrics["largest_component_size"].append(lcc_size)
-        metrics["mean_component_size"].append(mean_comp)
-        metrics["transitivity"].append(transitivity(G))
         metrics["avg_path_length_weighted"].append(apl_w)
-        metrics["density"].append(density(G))
         metrics["median_degree"].append(med_deg)
         metrics["mean_degree_concurrent"].append(mean_c)
         metrics["median_degree_concurrent"].append(median_c)
@@ -342,6 +251,7 @@ def compute_temporal_metrics(
     return pd.DataFrame(metrics)
 
 
+# Degree at specific snapshots, with demographics attached
 def degree_at_snapshots(
     snapshot_times: list[int],
     partnerships: PartnershipArrays,
@@ -352,9 +262,7 @@ def degree_at_snapshots(
 
     For each timestep in `snapshot_times`, build the network graph and
     record every active agent's degree plus their demographic attributes
-    at that moment. Useful for static cross-sectional analysis: degree
-    distributions, age-degree scatter plots, demographic stratification
-    at a specific point in time.
+
 
     Parameters
     ----------
@@ -376,8 +284,7 @@ def degree_at_snapshots(
     Notes
     -----
     Row count is approximately `len(snapshot_times) * num_active_agents`.
-    For a 5-snapshot, 15k-agent run that's ~75k rows — well within
-    memory.
+
     """
     if not snapshot_times:
         raise ValueError("snapshot_times must be a non-empty list")
@@ -408,6 +315,7 @@ def degree_at_snapshots(
     return pd.concat(pieces, ignore_index=True)
 
 
+# Degree in a time window, with demographics attached
 def degree_in_window(
     t_start: int,
     t_end: int,
@@ -419,15 +327,13 @@ def degree_in_window(
 
     For each agent active during any part of the window, count the
     number of distinct other agents they had a partnership with at
-    some point in [t_start, t_end]. Used for static / aggregated
-    network views: ego-network drawings, cumulative degree distributions,
-    "how many partners did each agent have during this 5-year period".
+    some point in [t_start, t_end].
 
     Parameters
     ----------
     t_start, t_end : int
         Inclusive window bounds, in timesteps. A partnership is
-        included if it overlaps the window at all — i.e. if
+        included if it overlaps the window i.e. if
         `start <= t_end and end > t_start`.
     partnerships : PartnershipArrays
         From `prepare_partnerships`.
@@ -488,6 +394,7 @@ def degree_in_window(
     return _attach_demographics(df, agent_log, snapshot_t=t_start)
 
 
+# Degree by demographic combo over time
 def degree_by_demographic_over_time(
     partnerships: PartnershipArrays,
     active: ActiveIntervals,
@@ -497,10 +404,8 @@ def degree_by_demographic_over_time(
     """Per-(timestep, demographic combo): degree summary statistics.
 
     For each timestep and each (AgeGroup, Sex, Orientation) combo,
-    computes the mean, median, p90, and count of agents' current
-    degrees. Suitable for temporal stratified plots: "average degree
-    of bisexual males 25-34 over time", per-demographic heatmaps,
-    or comparing degree dynamics across demographic groups.
+    computes the mean, median, and count of agents' current
+    degrees.
 
     Parameters
     ----------
@@ -519,8 +424,7 @@ def degree_by_demographic_over_time(
     Notes
     -----
     Rows where no agents matched a combo (e.g. no female bisexuals
-    65-74) are omitted. AgentAge is implicit: every agent contributes
-    to whichever AgeGroup they were in at the start of that timestep.
+    65-74) are omitted.
     """
     from partnersim_dynet.config import age_to_group
 
@@ -583,7 +487,7 @@ def degree_by_demographic_over_time(
                 G.add_edge(ev.agent_a, ev.agent_b)
             edge_mult[key] += 1
 
-        # ── Per-demographic aggregation ──────────────────────────
+        # Aggregate degree stats by demographic combo at this timestep
         # Bucket every active agent's degree by their current combo.
         buckets: dict[tuple, list[int]] = defaultdict(list)
         for node, deg in G.degree():
@@ -629,11 +533,13 @@ def degree_by_demographic_over_time(
 # Internal helpers
 
 
+# edge key for undirected edges: always (smaller, larger) to avoid duplicates
 def _edge_key(a: int, b: int) -> tuple[int, int]:
     """Canonical undirected edge key (smaller, larger)."""
     return (a, b) if a < b else (b, a)
 
 
+# Bucket partnership events by timestep for fast per-step processing
 def _bucket_events_by_t(
     partnerships: PartnershipArrays,
 ) -> dict[int, list]:
@@ -648,12 +554,13 @@ def _bucket_events_by_t(
     return buckets
 
 
+# Steady-state summary table (one row, mean/SD stats)
 def steady_state_summary_table(
     metrics_df: pd.DataFrame,
     output_dir: str,
     filename_stem: str = "summary_table",
     g_agg: nx.Graph | None = None,
-    top_n_hub: int = 30,
+    # top_n_hub: int = 30,
     write_tex: bool = True,
 ) -> list[str]:
     """Write a one-row publication summary table (csv + optional tex).
@@ -681,10 +588,6 @@ def steady_state_summary_table(
         ("mean_degree_monogamous", "mean_degree_monogamous"),
         ("median_degree_monogamous", "median_degree_monogamous"),
         ("n_monogamous", "n_monogamous"),
-        ("transitivity", "transitivity"),
-        ("density", "density"),
-        ("largest_component_size", "largest_component_size"),
-        ("num_components", "num_components"),
         ("avg_path_length_weighted", "avg_path_length"),
     ]:
         if col in w.columns:
@@ -692,9 +595,7 @@ def steady_state_summary_table(
             row[f"{label}_mean"], row[f"{label}_sd"] = mean_, std_
 
     if g_agg is not None:
-        degs = np.array(sorted((d for _, d in g_agg.degree()), reverse=True))
-        total = degs.sum()
-        row["hub_share_topN"] = float(degs[:top_n_hub].sum() / total) if total else np.nan
+        # row["hub_share_topN"] = float(degs[:top_n_hub].sum() / total) if total else np.nan
         if g_agg.number_of_edges() > 0:
             lcc = g_agg.subgraph(max(nx.connected_components(g_agg), key=len))
             rng = np.random.default_rng(42)
