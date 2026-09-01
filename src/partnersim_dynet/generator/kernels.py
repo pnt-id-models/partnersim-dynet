@@ -1,12 +1,11 @@
 """Numerical helpers for the performance of thepartnership simulator.
 
-
 1. **Numba JIT helpers** (``fast_normal_pdf``, ``fast_digitise_age_group``).
    These are called in tight loops where Python overhead dominates;
    ``@njit(cache=True)`` compiles them on first call and
    caches the binary on disk for subsequent runs.
 
-2. **Vectorized NumPy helpers** for the breakage phase
+2. **Vectorised NumPy helpers** for the breakage phase
    (``compute_failure_rates``, ``draw_breakage_events``).
    These functions operate on whole arrays at once so the inner loop runs in C.
 
@@ -128,7 +127,7 @@ def compute_breakage_events(
         Partnership durations in timesteps.
     base_breakage_probs : ndarray of float
         Per-partnership base breakage probability (already incorporating
-        the focal agent's NB multiplier and high-activity boost).
+        the initiating agent's NB multiplier and high-activity boost).
     alpha, gamma : float
         Dissolution decay parameters.
     uniforms : ndarray of float

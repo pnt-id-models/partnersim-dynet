@@ -27,11 +27,11 @@ class PartnershipRecord:
     Parameters
     ----------
     agent_id : int
-        ID of the focal agent.
+        ID of the initiating agent.
     agent_sex, agent_orientation : str
-        Demographic labels of the focal agent.
+        Demographic labels of the initiating agent.
     agent_age : int
-        Age of the focal agent at the moment the record was created.
+        Age of the initiating agent at the moment the record was created.
     partner_id : int | None
         Partner ID. None if the agent is recorded as never having had a
         partnership during the run (the "single" record case).
