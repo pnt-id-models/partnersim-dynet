@@ -5,16 +5,19 @@ the moment it either dissolved or was censored at end-of-simulation.
 The simulation accumulates these records during the run and generates them
 as the final partnership-level output table.
 
-Uses ``slots=True`` because the simulation creates one record per
-dissolved or censored partnership — for a 15k-agent, 1875-timestep run
-that's typically several hundred thousand instances. Slots remove the
-per-instance ``__dict__`` overhead, cutting memory and speeding attribute
-access.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+"""
+The `PartnershipRecord` dataclass is used to store information about
+partnerships in the simulation. Each record captures details about the agents,
+their demographics, the timing of the partnership, and whether it was censored
+or ended due to external factors. The use of `slots=True` optimises memory usage
+and access speed for these records
+"""
 
 
 @dataclass(slots=True)
