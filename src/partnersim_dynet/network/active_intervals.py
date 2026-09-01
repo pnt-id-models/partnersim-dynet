@@ -1,12 +1,13 @@
-"""Active-interval lookups from the agent log.
+"""Active-interval lookups from the agent log for building dynamic graphs.
 
-The agent log gives us ground truth for each agent's lifetime in the
+The agent log gives us data about each agent's trajectory in the
 simulation:
-    EntryTimestep <= t < ExitTimestep  which tells us whether an agent is active at t
+
+1. EntryTimestep <= t < ExitTimestep  which tells us whether an agent is active at t
 
 (ExitTimestep is exclusive: an agent removed at t=500 was active at t=499
 but not at t=500. Active-at-end agents have ExitTimestep = NaN, which we
-treat as "active forever" by using total_timesteps + 1 as a sentinel.)
+treat as "active forever" by using total_timesteps + 1)
 
 This module provides three views:
 
@@ -41,9 +42,9 @@ class ActiveIntervals:
         EntryTimestep per agent.
     exit_t : ndarray of int32, shape (n_agents,)
         ExitTimestep per agent. Active-at-end agents have
-        total_timesteps + 1 as the sentinel value.
+        total_timesteps + 1 as the default value.
     total_timesteps : int
-        The simulation's total_timesteps, used to interpret the sentinel.
+        The simulation's total_timesteps, used to interpret the default.
     """
 
     agent_ids: np.ndarray
@@ -51,7 +52,7 @@ class ActiveIntervals:
     exit_t: np.ndarray
     total_timesteps: int
 
-    # ── construction ──────────────────────────────────────────────────
+    # Construct from a generator agent log DataFrame
 
     @classmethod
     def from_agent_log(cls, agent_log: pd.DataFrame, total_timesteps: int) -> ActiveIntervals:
@@ -85,11 +86,11 @@ class ActiveIntervals:
         agent_ids = agent_log["Agent"].to_numpy(dtype=np.int64)
         entry_t = agent_log["EntryTimestep"].to_numpy(dtype=np.int32)
 
-        # NaN ExitTimestep means "still active at end of sim"; sentinel
+        # NaN ExitTimestep means "still active at end of sim"; default
         # is total_timesteps + 1 so active-at-t comparisons work uniformly.
         exit_raw = agent_log["ExitTimestep"]
-        sentinel = total_timesteps + 1
-        exit_t = exit_raw.astype("float64").fillna(sentinel).to_numpy(dtype=np.int32)
+        default = total_timesteps + 1
+        exit_t = exit_raw.astype("float64").fillna(default).to_numpy(dtype=np.int32)
 
         if (entry_t <= 0).any():
             bad = agent_log.loc[entry_t <= 0, "Agent"].tolist()[:5]
@@ -102,7 +103,10 @@ class ActiveIntervals:
             total_timesteps=total_timesteps,
         )
 
-    # ── queries ───────────────────────────────────────────────────────
+    # Queries:
+
+    # Active_at returns a set of agent IDs active at t to check which agents are active at a given timestep.
+    # This is useful for building dynamic graphs or filtering agents based on their activity status.
 
     def active_at(self, t: int) -> set[int]:
         """Return the set of agent IDs active at timestep t.
@@ -112,6 +116,7 @@ class ActiveIntervals:
         mask = (self.entry_t <= t) & (t < self.exit_t)
         return set(self.agent_ids[mask].tolist())
 
+    # Active_at_array is a vectorised version of active_at, returning a NumPy array instead of a set.
     def active_at_array(self, t: int) -> np.ndarray:
         """Return active agent IDs at t as a NumPy array.
 
@@ -121,6 +126,8 @@ class ActiveIntervals:
         mask = (self.entry_t <= t) & (t < self.exit_t)
         return self.agent_ids[mask]
 
+    # Is_active checks if a specific agent is active at a given timestep, returning a boolean value.
+    # This is useful for quickly checking the status of individual agents.
     def is_active(self, agent_id: int, t: int) -> bool:
         """Whether `agent_id` is active at timestep `t`."""
         # Linear scan with NumPy — fine for thousands of agents because
@@ -131,10 +138,11 @@ class ActiveIntervals:
         idx = int(np.argmax(mask))
         return bool(self.entry_t[idx] <= t < self.exit_t[idx])
 
+    # Bounds returns the entry and exit timesteps for a specific agent, or None if the agent is not found.
     def bounds(self, agent_id: int) -> tuple[int, int] | None:
         """Return (entry_t, exit_t) for `agent_id`, or None if absent.
 
-        Note: exit_t may be the sentinel (total_timesteps + 1) for
+        Note: exit_t may be the default (total_timesteps + 1) for
         active-at-end agents.
         """
         mask = self.agent_ids == agent_id
@@ -143,9 +151,13 @@ class ActiveIntervals:
         idx = int(np.argmax(mask))
         return (int(self.entry_t[idx]), int(self.exit_t[idx]))
 
+    # Length returns the total number of agents ever in the simulation, which is useful for understanding
+    # the scale of the simulation and for iterating over all agents if needed.
     def __len__(self) -> int:
         """Total number of agents ever in the simulation."""
         return len(self.agent_ids)
 
+    # Representation provides a string representation of the ActiveIntervals object,
+    # including the number of agents and total timesteps.
     def __repr__(self) -> str:
-        return f"ActiveIntervals(n_agents={len(self)}, " f"total_timesteps={self.total_timesteps})"
+        return f"ActiveIntervals(n_agents={len(self)}, total_timesteps={self.total_timesteps})"
