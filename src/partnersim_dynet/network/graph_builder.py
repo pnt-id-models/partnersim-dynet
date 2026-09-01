@@ -22,7 +22,7 @@ import pandas as pd
 
 from partnersim_dynet.network.active_intervals import ActiveIntervals
 
-# Preprocessing
+# Preprocessing the partnership DataFrame into aligned NumPy arrays allows fast filtering by time.
 
 
 @dataclass
@@ -45,9 +45,9 @@ class PartnershipArrays:
         StartTime of each partnership.
     end : ndarray of int32
         EndTime of each partnership. NaN EndTime is filled with
-        `total_timesteps + 1` (the same sentinel approach as
+        `total_timesteps + 1` (this is done for consistency with
         ActiveIntervals — partnerships still active at end of simulation
-        get a sentinel value beyond any real timestep).
+        get a value beyond the last timestep).
     """
 
     agent: np.ndarray
@@ -70,14 +70,15 @@ def prepare_partnerships(partnerships: pd.DataFrame, total_timesteps: int) -> Pa
         Rows representing singleton agents (no partner) are excluded.
     total_timesteps : int
         Used as the sentinel value for partnerships still active at end
-        (so `start <= t < end` queries work uniformly).
+        (so `start <= t < end` queries work uniformly). We do not include
+        external partners in the network, so we do not filter them out here.
 
     Returns
     -------
     PartnershipArrays
         Aligned arrays ready for fast time-based filtering.
     """
-    # required = {"Agent", "PartnerAgent", "StartTime", "EndTime", "ExternalPartner"}
+    # required = {"Agent", "PartnerAgent", "StartTime", "EndTime", "ExternalPartner"} # Not including external partners for networks currently
     required = {"Agent", "PartnerAgent", "StartTime", "EndTime"}
     missing = required - set(partnerships.columns)
     if missing:
@@ -88,8 +89,8 @@ def prepare_partnerships(partnerships: pd.DataFrame, total_timesteps: int) -> Pa
 
     # Filter out singleton rows: agents with no partner
     real = partnerships[
-        partnerships["PartnerAgent"].notna()
-        & partnerships["StartTime"].notna()  # & ~partnerships["ExternalPartner"].fillna(False)
+        partnerships["PartnerAgent"].notna() & partnerships["StartTime"].notna()
+        # & ~partnerships["ExternalPartner"].fillna(False)
     ].copy()
 
     agent = real["Agent"].to_numpy(dtype=np.int64)
@@ -150,7 +151,8 @@ def build_graph_at(
     a = partnerships.agent[active_mask]
     b = partnerships.partner[active_mask]
 
-    # Defensive filter: drop any edge involving a non-active node. This would indicate inconsistency between partnerships and the agent log
+    # Filter for dropping external partnerships as these are not in the agent log.
+    # This would indicate inconsistency between partnerships and the agent log
     active_set = set(active_nodes.tolist())
     edges = [
         (int(ai), int(bi))
@@ -161,9 +163,8 @@ def build_graph_at(
     return G
 
 
-# Event-driven iteration
-
-
+# Event based iteration for time-series metrics
+# This is for plotting metrics over time without having to rebuild the graph at every timestep.
 @dataclass(slots=True)
 class PartnershipEvent:
     """One edge-level event in the partnership timeline."""
@@ -179,9 +180,8 @@ def iter_partnership_events(
 ) -> Iterator[PartnershipEvent]:
     """Yield partnership start/end events in chronological order.
 
-    Use for metrics that maintain running state across time (e.g.
-    edge multiplicity, component sizes) and want to avoid rebuilding
-    the graph from scratch at every timestep.
+    Use for metrics that maintain running state across time to avoid
+    rebuilding the graph from scratch at every timestep.
 
     Events at the same timestep are ordered: all ends before any starts.
 
