@@ -4,9 +4,10 @@
   outputs.
 - ``run_replicates(sim_cfg, base_output_dir)``: multi-replicate batch
   using seeds from ``SimulationConfig.partnership_seeds()``. Runs in
-  parallel if ``sim_cfg.n_workers > 1``.
+  parallel if ``sim_cfg.n_workers > 1``. Plots are generated
+  only for one selected replicate
 
-Outputs
+Outputs (Note: some of these files are not currently used for any purpose)
 ---------------
 Always:
 - ``partnerships.{parquet,csv}``: the partnership DataFrame
@@ -47,19 +48,13 @@ from partnersim_dynet.network.plots.ego_network_new import identify_agents_by_sp
 from partnersim_dynet.network.plots.timeseries import (
     BURN_IN_STEPS,
     CENSORING_STEPS,
-    plot_avg_path_length,
     plot_degree_summary,
-    plot_density,
-    plot_hub_distribution,
 )
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Run summary
-# ---------------------------------------------------------------------------
 
-
+# Run summary dataclass for returning results from a single simulation run.
 @dataclass
 class RunResult:
     """Summary of a single simulation run."""
@@ -71,9 +66,7 @@ class RunResult:
     files_written: list[str]
 
 
-# ---------------------------------------------------------------------------
-# I/O helper
-# ---------------------------------------------------------------------------
+# I/O helper function to save a DataFrame in the specified format (parquet or csv).
 
 
 def _save_dataframe(df: pd.DataFrame, output_dir: str, name: str, fmt: str) -> str:
@@ -88,17 +81,20 @@ def _save_dataframe(df: pd.DataFrame, output_dir: str, name: str, fmt: str) -> s
     return path
 
 
-# ---------------------------------------------------------------------------
 # Single run
-# ---------------------------------------------------------------------------
+
+# Specify a default seed for reproducibility if a particular set of results need to be reproduced.
 seed = 380863079
 
 
+# For running a single simulation, we can use the run_single function.
+# It takes a PartnershipConfig, a seed, and an output directory, along with optional parameters for output format,
+# and which analyses to run.
 def run_single(
     cfg: PartnershipConfig,
     seed: int,
     output_dir: str,
-    *,
+    *,  # force keyword-only arguments for clarity
     output_format: str = "parquet",
     verbose: bool = False,
     run_metrics: bool = False,
@@ -126,11 +122,7 @@ def run_single(
     os.makedirs(output_dir, exist_ok=True)
     files: list[str] = []
 
-    # # run_plots implies run_structural_summary
-    # if run_plots:
-    #     run_structural_summary = True
-
-    # ── (1) Simulation ────────────────────────────────────────────────
+    # Simulation: generate partnerships and agent log
     gen = PartnershipGenerator(cfg, seed=seed)
     partnerships_df = gen.simulate_partnerships()
     agent_log = gen.get_agent_log()
@@ -141,6 +133,7 @@ def run_single(
             len(agent_log),
         )
 
+    # Write the raw outputs to disk in the specified format (parquet or csv).
     files.append(_save_dataframe(partnerships_df, output_dir, "partnerships", output_format))
     files.append(_save_dataframe(agent_log, output_dir, "agent_log", output_format))
 
@@ -148,12 +141,13 @@ def run_single(
         T = cfg.total_timesteps
         snapshot_times = [max(1, int(round(T * k / 4))) for k in (0, 1, 2, 3, 4)]
 
-    # ── (2) Metrics ───────────────────────────────────────────────────
+    # Metrics and degree distributions require the partnerships and agent log to be processed into a usable format
     metrics_df: pd.DataFrame | None = None
     degree_demo_df: pd.DataFrame | None = None
     arr = None
     active = None
 
+    # If any of the metrics, plots, or summary table are requested, compute the temporal metrics.
     need_metrics = run_metrics or run_plots or run_summary_table
     if need_metrics:
         from partnersim_dynet.network import (
@@ -169,7 +163,7 @@ def run_single(
         if verbose:
             logger.info("Metrics computed: %d timesteps", len(metrics_df))
 
-    # ── (3) Degree distributions ──────────────────────────────────────
+    # Calculate degree distributions if requested. This requires the partnerships and agent log to be processed into a usable format.
     if run_degree_distributions:
         from partnersim_dynet.network import (
             ActiveIntervals,
@@ -196,8 +190,7 @@ def run_single(
         if verbose:
             logger.info("Degree distributions computed")
 
-    # ── (3b) Structural summary ───────────────────────────────────────
-    # Build g_agg once here; reused by both the summary and the plots block.
+    # Build the steady-state aggregate graph if plots are requested. This is used for plotting and summary statistics.
     g_agg = None
     if run_plots:
         import networkx as nx
@@ -219,7 +212,8 @@ def run_single(
         ):
             if int(_ai) in node_universe and int(_bi) in node_universe and _ai != _bi:
                 g_agg.add_edge(int(_ai), int(_bi))
-    # ── (4) Plots ─────────────────────────────────────────────────────
+
+    # Plot generation if requested. This requires the metrics and degree distributions to be computed.
     if run_plots:
         from partnersim_dynet.network import (
             ActiveIntervals,
@@ -229,57 +223,27 @@ def run_single(
         from partnersim_dynet.network.plots import (
             build_node_attr,
             build_shared_ego_layouts,
-            plot_degree_temporal_heatmaps,
             plot_ego_3hop_aggregate_per_agent,
             plot_ego_3hop_snapshots,
             plot_ego_network_static_aggregate,
-            plot_largest_component_size,
-            plot_shortest_path_distribution,
-            plot_transitivity,
-        )
-        from partnersim_dynet.network.plots.heatmap import (
-            temporal_windows as heatmap_windows,
         )
 
         plots_dir = os.path.join(output_dir, "plots")
         os.makedirs(plots_dir, exist_ok=True)
 
-        # Timeseries plots that consume the per-timestep metrics DataFrame.
-        for plot_fn in (
-            plot_transitivity,
-            plot_density,
-            plot_largest_component_size,
-            plot_avg_path_length,
-        ):
-            files.extend(plot_fn(metrics_df, plots_dir))
-
+        # Timeseries summary over per-timestep network metrics.
         files.extend(plot_degree_summary(metrics_df, plots_dir))
 
-        # Heatmap
-        if degree_demo_df is None:
-            if arr is None:
-                active = ActiveIntervals.from_agent_log(
-                    agent_log, total_timesteps=cfg.total_timesteps
-                )
-                arr = prepare_partnerships(partnerships_df, total_timesteps=cfg.total_timesteps)
-            degree_demo_df = degree_by_demographic_over_time(
-                arr, active, agent_log, total_timesteps=cfg.total_timesteps
-            )
-        files.extend(
-            plot_degree_temporal_heatmaps(
-                degree_demo_df,
-                windows=heatmap_windows,
-                output_dir=plots_dir,
-            )
-        )
-
-        # Ego networks — spec-selected agents, ages anchored to reference_t
+        # Ego networks — for selected agents, plot the ego network at a few timesteps, and also the 3-hop ego network over the entire simulation.
         ego_timesteps = [1000, 1500]
         reference_t = ego_timesteps[0]
 
+        #
         node_attr = build_node_attr(agent_log, snapshot_t=reference_t)
         eligible_now = active.active_at(reference_t)
 
+        # Identify agents by demographic specifications for ego network plotting. The specifications are defined as tuples of (gender, partnership type).
+        # The function returns a list of agent IDs that match the specifications and are currently active.
         specs = [
             ("Female", "Bisexual"),
             ("Female", "Same-sex"),
@@ -341,13 +305,10 @@ def run_single(
         elif verbose:
             logger.info("No agents matched the specs — skipping ego network plots")
 
-        files.extend(plot_shortest_path_distribution(g_agg, plots_dir))
-        files.extend(plot_hub_distribution(g_agg, plots_dir))
-
         if verbose:
             logger.info("Plots written to %s", plots_dir)
 
-    # ── (4b) Summary table ────────────────────────────────────────────
+    # Summary table generation if requested. This requires the metrics to be computed, and optionally the aggregate graph if plots are requested.
     if run_summary_table:
         from partnersim_dynet.network import steady_state_summary_table
 
@@ -360,7 +321,8 @@ def run_single(
         )
         if verbose:
             logger.info("Summary table written to %s", output_dir)
-    # ── (5) Diagnostics ───────────────────────────────────────────────
+    # Diagnostics generation if requested. This requires the agent log to be available.
+    # The diagnostics include exporting probability bounds, plotting agent probability distributions, and saving a probability table.
     if run_diagnostics:
         from partnersim_dynet.diagnostics import (
             export_probability_bounds_csv,
@@ -390,15 +352,13 @@ def run_single(
     )
 
 
-# ---------------------------------------------------------------------------
-# Multi-replicate batch
-# ---------------------------------------------------------------------------
-
-
+# Single worker function for parallel execution. This function is used by the ProcessPoolExecutor to run a single simulation in a separate process.
+# It takes a dictionary of keyword arguments and passes them to the run_single function.
 def _run_single_worker(kwargs: dict) -> RunResult:
     return run_single(**kwargs)
 
 
+# Run multiple replicates of the simulation in parallel using ProcessPoolExecutor.
 def run_replicates(
     sim_cfg: SimulationConfig,
     base_output_dir: str,
@@ -416,7 +376,8 @@ def run_replicates(
             sim_cfg.n_workers,
             seeds,
         )
-
+    # Create a list of jobs, where each job is a dictionary of parameters for a single simulation run.
+    # Each job includes the configuration, seed, output directory, and other options.
     jobs = []
     for seed in seeds:
         replicate_dir = os.path.join(base_output_dir, f"partnership_seed_{seed}")
@@ -434,10 +395,12 @@ def run_replicates(
                 snapshot_times=snapshot_times,
             )
         )
-
+    # If only one worker is specified, run the jobs sequentially in the main process. Otherwise, use ProcessPoolExecutor to run the jobs in parallel.
     if sim_cfg.n_workers == 1:
         return [_run_single_worker(job) for job in jobs]
 
+    # Run the jobs in parallel using ProcessPoolExecutor. The results are collected as they complete, and any exceptions are logged.
+    # The results are then sorted by seed to maintain the original order.
     results: list[RunResult] = []
     with ProcessPoolExecutor(max_workers=sim_cfg.n_workers) as executor:
         future_to_seed = {executor.submit(_run_single_worker, job): job["seed"] for job in jobs}
@@ -452,6 +415,8 @@ def run_replicates(
                 logger.error("Replicate seed=%d failed: %s", seed, exc)
                 raise
 
+    # Sort the results by seed to maintain the original order of seeds.
+    # This is done by creating a mapping from seed to its index in the original list of seeds, and then sorting the results based on this mapping.
     seed_order = {int(seed): i for i, seed in enumerate(seeds)}
     results.sort(key=lambda r: seed_order[r.seed])
     return results
