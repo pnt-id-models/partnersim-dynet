@@ -49,5 +49,3 @@ deploy_key.pub
 examples/output_*/
 *.log
 *.png
-R_plots/
-Rplots.pdf
