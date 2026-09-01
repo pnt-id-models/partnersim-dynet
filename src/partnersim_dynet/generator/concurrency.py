@@ -17,8 +17,8 @@ Three selection models are supported, chosen via
    then drawn only from the high-activity tail of the heterogeneity
    distribution.
 
-Model 1 is a simple baseline and is the default. Model 2 captures the observed demographic
-pattern of concurrency without assuming it's driven by NB heterogeneity.
+Model 1 is a simple baseline and is the default. Model 2 captures the observed
+demographic pattern of concurrency without assuming it's driven by NB heterogeneity.
 Model 3 tests the hypothesis that concurrency is concentrated among high-NB
 agents, which is a common assumption in the literature,
 """
@@ -31,6 +31,9 @@ from numpy.typing import NDArray
 from partnersim_dynet.config import PartnershipConfig
 
 
+# We use the term "concurrent" to mean "allowed to hold multiple partnerships".
+# Individual agents are flagged as concurrent or not at the start of the simulation and this flag does not change over time.
+# The concurrency selection is done once at the start of the simulation, based on the configuration parameters.
 def select_concurrent_indices(
     candidate_indices: NDArray[np.int32],
     n_target: int,
@@ -73,13 +76,17 @@ def select_concurrent_indices(
         return length may be less if the candidate pool is smaller than
         ``n_target`` or, for Model 3, if the NB filter is too restrictive.
     """
+    # Cap the target at the number of candidates
     n_target = min(n_target, len(candidate_indices))
     if n_target == 0:
         return np.empty(0, dtype=np.int32)
 
+    # If concurrency_model is 1, 2, or 3, we call the appropriate selection function.
+    # For Model 1, we select uniformly at random from the candidate pool.
     if cfg.concurrency_model == 1:
         return _model_1_uniform_random(candidate_indices, n_target, rng)
 
+    # For Models 2 and 3, we stratify by (age_group, sex, orientation
     elif cfg.concurrency_model in (2, 3):
         return _model_2_or_3_stratified(
             candidate_indices=candidate_indices,
@@ -97,7 +104,7 @@ def select_concurrent_indices(
         raise ValueError(f"unknown concurrency_model: {cfg.concurrency_model}")
 
 
-# Model 1 — uniform random
+# Model 1: This selection is random uniform, with no stratification.
 
 
 def _model_1_uniform_random(
@@ -110,7 +117,8 @@ def _model_1_uniform_random(
     return chosen.astype(np.int32)
 
 
-# Models 2 and 3 — stratified across (age_group, sex, ori) combos
+# Models 2 and 3 — stratified across (age_group, sex, ori) combinations
+# Model 3 additionally filters to high-NB agents within each combination, falling back to the full combination if the filter would empty it.
 
 
 def _model_2_or_3_stratified(
@@ -141,9 +149,11 @@ def _model_2_or_3_stratified(
         age_group_labels=age_group_labels,
     )
 
+    # Determine how many to select from each combination.
+    # Try to distribute evenly, but if a combination has fewer candidates than its quota, we take all of them and back-fill from the leftover pool.
     n_combos = len(combo_buckets)
     per_combo = max(1, n_target // n_combos)
-    # Distribute the remainder across the first few combos
+    # Distribute the remainder across the first few combinations
     remainder = n_target - per_combo * n_combos
 
     selected: list[int] = []
@@ -165,7 +175,8 @@ def _model_2_or_3_stratified(
             chosen_set = set(chosen)
             leftovers.extend(i for i in pool if i not in chosen_set)
 
-    # Back-fill if we came up short (sparse combos)
+    # Back-fill if the required number of selections was not met due to small buckets.
+    # This could happen when the population size is small.
     shortfall = n_target - len(selected)
     if shortfall > 0 and leftovers:
         extra = rng.choice(
@@ -178,6 +189,7 @@ def _model_2_or_3_stratified(
     return np.array(selected[:n_target], dtype=np.int32)
 
 
+# Builds a dictionary mapping each (age_group, sex, orientation) combination to a list of candidate indices in that bucket.
 def _build_combo_buckets(
     candidate_indices: NDArray[np.int32],
     sex_arr: NDArray[np.int8],
@@ -196,6 +208,7 @@ def _build_combo_buckets(
     return buckets
 
 
+# Apply the Model 3 NB filter to a bucket of candidates. If the filter would empty the bucket, fall back to the unfiltered bucket.
 def _apply_model_3_filter(
     bucket: list[int],
     nb_mult_form: NDArray[np.float64],
