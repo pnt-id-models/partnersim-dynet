@@ -1,9 +1,8 @@
-"""Ego-network plots for top-concurrent-partnership agents.
+"""Ego-network plotting script/
 
 Consolidated module: 1-hop ego networks (dynamic / snapshot / static
 aggregate / multi-window aggregate) plus multi-hop k-shell and
-orientation-coloured variants. All variants share layout, drawing,
-and legend helpers — no per-variant duplication.
+orientation-coloured variants.
 
 Visual encoding (all panels):
   - Marker shape: sex (circle = Male, square = Female)
@@ -31,7 +30,6 @@ from partnersim_dynet.network.graph_builder import (
     PartnershipArrays,
     build_graph_at,
 )
-from partnersim_dynet.network.plots.ego_network_extended import DISTANCE_COLOURS
 from partnersim_dynet.network.plots.style import (
     PALETTE,
     OutputFormats,
@@ -39,21 +37,19 @@ from partnersim_dynet.network.plots.style import (
     save_figure,
 )
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+# Constant node sizes for ego vs. partner nodes
 
-EGO_NODE_SIZE = 120
-PARTNER_NODE_SIZE = 32
+EGO_NODE_SIZE = 150
+PARTNER_NODE_SIZE = 60
 
 
-# Colourblind-safe qualitative palette (Okabe–Ito), chosen for maximum
+# Colourblind-safe qualitative palette chosen for maximum
 # separation between the three orientation categories at small marker
 # sizes and in greyscale print.
 ORIENTATION_COLORS_ACCESSIBLE = {
     "Opposite-sex": "#2081D6",  # blue
     "Same-sex": "#109E00",  # bluish-green
-    "Bisexual": "#C000D5",  # vermillion
+    "Bisexual": "#C000D5",  # pink
 }
 
 # Standard working-age group boundaries, matching PartnershipGenerator's
@@ -70,6 +66,17 @@ MAX_NODES_PER_PANEL = 25
 
 DEFAULT_SEXES = ("Male", "Female")
 DEFAULT_ORIENTATIONS = ("Opposite-sex", "Same-sex", "Bisexual")
+
+# Shared legend style for all ego-network plots, with larger font and marker sizes
+LEGEND_STYLE_LARGE: dict = dict(
+    ncol=8,
+    fontsize=14,
+    legend_marker_size=17,
+    handletextpad=0.35,
+    columnspacing=0.8,
+    labelspacing=0.15,
+    compact=True,
+)
 # specs = [
 #     ("Male", "Bisexual", "25-34"),
 #     ("Female", "Same-sex", "35-44"),
@@ -94,8 +101,6 @@ def identify_agents_by_spec(
     For each spec, ranks eligible candidates by (MaxSimultaneous,
     TotalPartnerships) — same ranking as identify_top_concurrent_agents —
     and picks the top-ranked agent matching that exact combination.
-    Agents already claimed by an earlier spec are excluded from later
-    specs, so the same agent can't fill two slots.
 
     Parameters
     ----------
@@ -104,8 +109,7 @@ def identify_agents_by_spec(
     node_attr : Mapping[int, Mapping]
         {agent_id: {"Sex": ..., "Orientation": ..., "Age": ...}}, as
         produced by build_node_attr(agent_log, snapshot_t=...). AgeGroup
-        is derived here from Age via age_to_group — accuracy depends on
-        the snapshot_t used when node_attr was built.
+        is derived here from Age via age_to_group
     specs : list of (sex, orientation) tuples
         One tuple per desired agent, e.g.
         [("Male", "Bisexual"),
@@ -117,10 +121,10 @@ def identify_agents_by_spec(
 
     Returns
     -------
-    list of int or None, same length and order as `specs`. A slot is
-    None if no eligible agent matched that spec — callers should check
-    for this rather than assume a full match.
+    list of int or None, same length and order as `specs`.
     """
+
+    # Real partnerships only (ignore missing PartnerAgent or StartTime/EndTime)
     real = partnerships[
         partnerships["PartnerAgent"].notna() & partnerships["StartTime"].notna()
     ].copy()
@@ -181,9 +185,7 @@ def identify_agents_by_spec(
     return selected
 
 
-# ---------------------------------------------------------------------------
-# Identification: top concurrent agents (with inclusivity quota)
-# ---------------------------------------------------------------------------
+# Identification: top concurrent agents (UNUSED)
 def identify_top_concurrent_agents(
     partnerships: pd.DataFrame,
     node_attr: Mapping[int, Mapping],
@@ -192,18 +194,7 @@ def identify_top_concurrent_agents(
     orientations: tuple[str, ...] = DEFAULT_ORIENTATIONS,
     eligible_agents: set[int] | None = None,
 ) -> list[int]:
-    """Return top_n agent IDs by max simultaneous partnerships, subject to an
-    inclusivity quota.
-
-    The selection is split as evenly as possible across `sexes` (e.g. for
-    top_n=6 and two sexes: 3/3; any remainder goes to the first sex listed).
-    Within each sex's quota, one slot is first reserved for the top-ranked
-    agent of each orientation in `orientations` — guaranteed a spot
-    regardless of how many partners they have — before the remaining slots
-    in that sex's quota are filled by overall rank (max simultaneous
-    partnerships, then total partnerships). If a sex/orientation combo has
-    no eligible agents, the shortfall is backfilled from the overall pool
-    so top_n agents are still returned when possible.
+    """Return top_n agent IDs by max simultaneous partnerships,
 
     Parameters
     ----------
@@ -224,9 +215,7 @@ def identify_top_concurrent_agents(
     eligible_agents : set[int] | None
         If given, restricts the candidate pool to these agent IDs before
         ranking/quota selection — e.g. agents of a specific age or age
-        group at a reference timestep. If the restricted pool can't fill
-        top_n, returns as many as are available (no backfill from outside
-        eligible_agents).
+        group at a reference timestep.
     """
     real = partnerships[
         partnerships["PartnerAgent"].notna() & partnerships["StartTime"].notna()
@@ -316,9 +305,7 @@ def identify_top_concurrent_agents(
     return selected[:top_n]
 
 
-# ---------------------------------------------------------------------------
-# Node attribute lookup
-# ---------------------------------------------------------------------------
+# Node lookup: demographics (Sex, Orientation, Age)
 
 
 def build_node_attr(agent_log: pd.DataFrame, snapshot_t: int | None = None) -> dict[int, dict]:
@@ -333,40 +320,7 @@ def build_node_attr(agent_log: pd.DataFrame, snapshot_t: int | None = None) -> d
     return out
 
 
-def _agents_at_age(
-    agent_log: pd.DataFrame,
-    active: ActiveIntervals,
-    target_age: int,
-    reference_t: int,
-) -> set[int]:
-    """Agent IDs who are exactly `target_age` and active at `reference_t`."""
-    ages = agent_log["EntryAge"] + (reference_t - agent_log["EntryTimestep"])
-    mask = ages == target_age
-    candidates = set(int(a) for a in agent_log.loc[mask, "Agent"])
-    active_now = active.active_at(reference_t)
-    return candidates & active_now
-
-
-def _agents_in_age_group(
-    agent_log: pd.DataFrame,
-    active: ActiveIntervals,
-    lo: int,
-    hi: int,
-    reference_t: int,
-) -> set[int]:
-    """Agent IDs whose age falls in [lo, hi] and are active at `reference_t`."""
-    ages = agent_log["EntryAge"] + (reference_t - agent_log["EntryTimestep"])
-    mask = (ages >= lo) & (ages <= hi)
-    candidates = set(int(a) for a in agent_log.loc[mask, "Agent"])
-    active_now = active.active_at(reference_t)
-    return candidates & active_now
-
-
-# ---------------------------------------------------------------------------
-# Aggregate-graph builder (shared by static aggregate + window comparison)
-# ---------------------------------------------------------------------------
-
-
+# Aggregate graph construction (used by static-aggregate and multi-window-aggregate plots)
 def _build_aggregate_graph(
     partnerships: PartnershipArrays,
     active: ActiveIntervals,
@@ -390,23 +344,16 @@ def _build_aggregate_graph(
     return g
 
 
-# ---------------------------------------------------------------------------
-# K-hop subgraph (used by ego-radius=1 via nx.ego_graph, and by k-shell)
-# ---------------------------------------------------------------------------
-
-
+# k-hop subgraph extraction (used by multi-hop k-shell plots)
 def _khop_subgraph_capped(
     g: nx.Graph,
     ego: int,
     k: int,
     max_nodes: int,
 ) -> tuple[nx.Graph, dict[int, int]]:
-    """BFS out to k hops from ego, capped at max_nodes total.
+    """Breadth-first search for k hops from ego, capped at max_nodes total.
 
-    Returns (subgraph, distance_map). distance_map is kept in the return
-    signature for backward compatibility with callers that used to do
-    distance-based colouring, but orientation-coloured callers can ignore
-    the second element.
+    Returns (subgraph, distance_map).
     """
     if ego not in g:
         return _empty(ego), {ego: 0}
@@ -433,11 +380,7 @@ def _khop_subgraph_capped(
     return sub, distance_map
 
 
-# ---------------------------------------------------------------------------
-# Layout (shared)
-# ---------------------------------------------------------------------------
-
-
+# Shared layout computation for all ego agents (used by static-aggregate and multi-window-aggregate plots)
 @dataclass(frozen=True)
 class EgoLayout:
     positions: dict[int, np.ndarray]
@@ -492,11 +435,7 @@ def _empty(ego: int) -> nx.Graph:
     return g
 
 
-# ---------------------------------------------------------------------------
-# Drawing (single shared implementation for all variants)
-# ---------------------------------------------------------------------------
-
-
+# Drawing helpers (used by all ego-network plots)
 def _configure_ax(ax) -> None:
     ax.set_xticks([])
     ax.set_yticks([])
@@ -531,6 +470,7 @@ def _row_label(ax, ego: int, age: int | None = None, extra_offset: bool = False)
     )
 
 
+# Draw one ego subgraph. No age labels, no node/edge count annotation.
 def _draw_ego_panel(
     ax,
     sub: nx.Graph,
@@ -547,10 +487,8 @@ def _draw_ego_panel(
     orientation_colors: dict[str, str] | None = None,
     ego_highlight_color: str = "#E69F00",
 ) -> None:
-    """Draw one ego subgraph. No age labels, no node/edge count annotation.
-    Ego is distinguished by size and a thicker black outline only — no
-    colour highlight — so it stays legible in print and for colour-vision-
-    deficient readers.
+    """Draw one ego subgraph.
+    Ego is distinguished by an orange outline.
     """
     _configure_ax(ax)
 
@@ -613,12 +551,20 @@ def _draw_ego_panel(
             node_collection.set_clip_on(False)
 
 
+# Add legend to the figure, with sex shapes and orientation colors, plus ego highlight. No legend frame.
 def _add_legend(
     fig,
     color_by: str = "orientation",
     y_anchor: float = 0.02,
     orientation_colors: dict[str, str] | None = None,
     ego_highlight_color: str = "#E69F00",
+    ncol: int = 4,
+    fontsize: int = 12,
+    legend_marker_size: int = 14,
+    handletextpad: float = 0.45,
+    columnspacing: float = 0.9,
+    labelspacing: float = 0.3,
+    compact: bool = False,
 ) -> None:
     handles = [Line2D([0], [0], color="none", label="Sex:")]
     for sex in ("Female", "Male"):
@@ -629,30 +575,15 @@ def _add_legend(
                 marker=PALETTE.sex_shape(sex),
                 color="#222222",
                 linestyle="None",
-                markersize=12,
+                markersize=legend_marker_size,
+                markeredgecolor="none",
                 label=sex,
             )
         )
-    handles.append(Line2D([0], [0], color="none", label=" "))
+    if not compact:
+        handles.append(Line2D([0], [0], color="none", label=" "))
 
-    if color_by == "distance":
-        handles.append(Line2D([0], [0], color="none", label="Distance:"))
-        for d, c in DISTANCE_COLOURS.items():
-            label = "ego" if d == 0 else f"{d} hop{'s' if d > 1 else ''}"
-            handles.append(
-                Line2D(
-                    [0],
-                    [0],
-                    marker="o",
-                    color="w",
-                    markerfacecolor=c,
-                    markersize=12,
-                    label=label,
-                    markeredgecolor="#000000",
-                    markeredgewidth=0.6,
-                )
-            )
-    else:
+    if color_by == "orientation":
         colors_lookup = orientation_colors or ORIENTATION_COLORS_ACCESSIBLE
         handles.append(Line2D([0], [0], color="none", label="Orientation:"))
         for ori in ("Opposite-sex", "Same-sex", "Bisexual"):
@@ -660,51 +591,58 @@ def _add_legend(
                 Line2D(
                     [0],
                     [0],
-                    marker="o",
+                    marker="s",  # square marker for orientation
                     color="w",
                     markerfacecolor=colors_lookup[ori],
-                    markersize=12,
+                    markersize=legend_marker_size,
                     label=ori,
-                    markeredgecolor="#000000",
-                    markeredgewidth=0.6,
+                    markeredgecolor="none",
+                    markeredgewidth=0,
                 )
             )
-    handles.append(Line2D([0], [0], color="none", label=" "))
+    if not compact:
+        handles.append(Line2D([0], [0], color="none", label=" "))
     handles.append(
         Line2D(
             [0],
             [0],
-            marker="o",
+            marker="s",
             color="w",
             markerfacecolor="gray",
-            markersize=12,
+            markersize=legend_marker_size,
             markeredgecolor=ego_highlight_color,
-            markeredgewidth=2.4,
+            markeredgewidth=2.8,
             label="ego",
         )
     )
 
-    fig.legend(
+    legend = fig.legend(
         handles=handles,
         loc="lower center",
-        ncol=len(handles),
+        ncol=ncol,
         frameon=False,
-        fontsize=12,
+        fontsize=fontsize,
         bbox_to_anchor=(0.5, y_anchor),
-        handletextpad=0.45,
-        columnspacing=0.9,
+        handletextpad=handletextpad,
+        columnspacing=columnspacing,
+        labelspacing=labelspacing,
+        borderaxespad=0.0,
     )
+    if legend.get_frame() is not None:
+        legend.get_frame().set_edgecolor("none")
+        legend.get_frame().set_linewidth(0.0)
 
 
+# Static-aggregate ego-network plot: one panel per agent, showing all partnerships active at any point in [t_start, t_end].
 def plot_ego_network_static_aggregate(
     partnerships_df: pd.DataFrame,
     partnerships: PartnershipArrays,
     active: ActiveIntervals,
     output_dir: str,
     agents: list[int],
-    t_start: int,
-    t_end: int,
-    node_attr: Mapping[int, Mapping],
+    t_start: int = 0,
+    t_end: int = 1875,
+    node_attr: Mapping[int, Mapping] | None = None,
     ego_radius: int = 1,
     filename_stem: str = "ego_network_static_aggregate",
     formats: OutputFormats = OutputFormats(),
@@ -728,9 +666,17 @@ def plot_ego_network_static_aggregate(
     n_rows = len(agents)
 
     with publication_style():
-        fig = plt.figure(figsize=(9.0, 3.0 * n_rows + 1.0))
+        fig_height = max(7.5, 2.6 * n_rows + 2.7)
+        fig = plt.figure(figsize=(8.95, min(fig_height, 11.69)))
         gs = gridspec.GridSpec(
-            n_rows, 1, figure=fig, hspace=0.14, left=0.08, right=0.97, top=0.92, bottom=0.10
+            n_rows,
+            1,
+            figure=fig,
+            hspace=0.28,
+            left=0.08,
+            right=0.97,
+            top=0.94,
+            bottom=0.04,
         )
         for i, ego in enumerate(agents):
             ax = fig.add_subplot(gs[i, 0])
@@ -746,12 +692,16 @@ def plot_ego_network_static_aggregate(
                 ego,
                 edge_alpha=edge_alpha,
                 edge_width=edge_width,
-                ego_node_size=250,
-                partner_node_size=200,
+                ego_node_size=180,
+                partner_node_size=120,
             )
             _row_label(ax, ego)
 
-        _add_legend(fig)
+        _add_legend(
+            fig,
+            y_anchor=0.0,
+            **LEGEND_STYLE_LARGE,
+        )
         fig.suptitle(
             f"Aggregate ego networks — all partnerships in [{t_start}, {t_end}]",
             fontsize=12,
@@ -764,76 +714,16 @@ def plot_ego_network_static_aggregate(
     return written
 
 
-# # A4 portrait, inches, with a small margin reserved for title/legend.
-# # A4 width is fixed (portrait), but height scales with the number of
-# # agent rows so a 6-row figure isn't cramped against the legend. This
-# # can run taller than one physical A4 page — scale down at print/insert
-# # time (vector formats like PDF/SVG lose nothing when rescaled).
-# A4_WIDTH_IN = 8.27
-# A4_HEIGHT_IN = 11.69
-# ROW_HEIGHT_IN = 1.7          # was 1.9 — more vertical room per row
-# TOP_MARGIN_IN = 1         # was 0.9 — title + column headers ("t = ...")
-# BOTTOM_MARGIN_IN = 1       # was 0.6 — legend, with clearance above it
-# def plot_ego_3hop_snapshots(
-#     partnerships_df: pd.DataFrame, partnerships: PartnershipArrays, active: ActiveIntervals,
-#     agent_log: pd.DataFrame, output_dir: str, agents: list[int], timesteps: list[int],
-#     k_hops: int = 3, max_nodes: int = MAX_NODES_PER_PANEL,
-#     filename_stem: str = "ego_3hop_snapshots", formats: OutputFormats = OutputFormats(),
-#     agent_ages: Mapping[int, int] | None = None,
-#     title_suffix: str = "",
-#     show_title: bool = False,
-# ) -> list[str]:
-#     if not timesteps:
-#         raise ValueError("timesteps must be a non-empty list")
-#     if not agents:
-#         return []
-#     node_attr = build_node_attr(agent_log)
-
-#     n_rows, n_cols = len(agents), len(timesteps)
-#     fig_height = TOP_MARGIN_IN + n_rows * ROW_HEIGHT_IN + BOTTOM_MARGIN_IN
-#     top_frac = 1 - TOP_MARGIN_IN / fig_height
-#     bottom_frac = BOTTOM_MARGIN_IN / fig_height
-
-#     with publication_style():
-#         fig = plt.figure(figsize=(A4_WIDTH_IN, fig_height))
-#         gs = gridspec.GridSpec(
-#             n_rows, n_cols, figure=fig, hspace=0.22, wspace=0.06,
-#             left=0.03, right=0.98, top=top_frac, bottom=bottom_frac,
-#         )
-#         for i, ego in enumerate(agents):
-#             for j, t in enumerate(timesteps):
-#                 ax = fig.add_subplot(gs[i, j])
-#                 g_t = build_graph_at(t, partnerships, active)
-#                 sub, dist_map = _khop_subgraph_capped(g_t, ego, k_hops, max_nodes)
-#                 layout = _layout_for_subgraph(sub, ego)
-#                 _draw_ego_panel(
-#                     ax, sub, layout, node_attr, ego,
-#                     edge_color="#333333", edge_alpha=0.75, edge_width=1.6,
-#                     ego_node_size=60, partner_node_size=80,
-#                 )
-#                 if i == 0:
-#                     ax.set_title(f"t = {t}", fontsize=13, fontweight="bold", pad=20)
-#                 if j == 0:
-#                     age = agent_ages.get(ego) if agent_ages else None
-#                     _row_label(ax, ego, age=age)
-#         _add_legend(fig, y_anchor=(BOTTOM_MARGIN_IN * 0.35) / fig_height)
-#         if show_title:
-#             fig.suptitle(
-#                 f"Snapshot ego networks ({k_hops}-hop, orientation-coloured){title_suffix}",
-#                 fontsize=14, fontweight="bold", y=1 - (TOP_MARGIN_IN * 0.25) / fig_height,
-#             )
-#         out = os.path.join(output_dir, filename_stem)
-#         written = save_figure(fig, out, formats)
-#         plt.close(fig)
-#     return written
-
-A4_WIDTH_IN = 8.27
+# Add some constants for A4 page layout, to keep the figure size to a full page and derive row height from the number
+# of agents rather than fixing row height and letting the figure shrink for small agent counts.
+A4_WIDTH_IN = 8.95
 A4_HEIGHT_IN = 11.69
 TOP_MARGIN_IN = 1.0  # title + column headers ("t = ...")
-BOTTOM_MARGIN_IN = 1.0  # legend, with clearance above it
+BOTTOM_MARGIN_IN = 0.78  # legend, with clearance above it
 MIN_ROW_HEIGHT_IN = 1.7  # floor, in case someone passes many agents
 
 
+# Plot multi-agent, multi-timestep snapshots of k-hop ego networks, with one row per agent and one column per timestep.
 def plot_ego_3hop_snapshots(
     partnerships_df: pd.DataFrame,
     partnerships: PartnershipArrays,
@@ -859,10 +749,8 @@ def plot_ego_3hop_snapshots(
 
     n_rows, n_cols = len(agents), len(timesteps)
 
-    # Fix the figure to a full A4 page and derive row height from however
-    # many agents there are, rather than fixing row height and letting the
-    # figure shrink for small agent counts. Fewer agents => taller rows,
-    # so node sizes tuned for a 6-agent A4 page still look right at 3.
+    # Fix the figure to a full A4 page and derive row height
+
     available_height = page_height_in - TOP_MARGIN_IN - BOTTOM_MARGIN_IN
     row_height_in = max(available_height / n_rows, MIN_ROW_HEIGHT_IN)
     fig_height = TOP_MARGIN_IN + n_rows * row_height_in + BOTTOM_MARGIN_IN
@@ -870,7 +758,7 @@ def plot_ego_3hop_snapshots(
     bottom_frac = BOTTOM_MARGIN_IN / fig_height
 
     with publication_style():
-        fig = plt.figure(figsize=(A4_WIDTH_IN, fig_height))
+        fig = plt.figure(figsize=(10.2, fig_height))
         gs = gridspec.GridSpec(
             n_rows,
             n_cols,
@@ -897,15 +785,19 @@ def plot_ego_3hop_snapshots(
                     edge_color="#333333",
                     edge_alpha=0.75,
                     edge_width=1.6,
-                    ego_node_size=120,
-                    partner_node_size=70,
+                    ego_node_size=180,
+                    partner_node_size=120,
                 )
                 if i == 0:
                     ax.set_title(f"t = {t}", fontsize=13, fontweight="bold", pad=20)
                 if j == 0:
                     age = agent_ages.get(ego) if agent_ages else None
                     _row_label(ax, ego, age=age)
-        _add_legend(fig, y_anchor=(BOTTOM_MARGIN_IN * 0.35) / fig_height)
+        _add_legend(
+            fig,
+            y_anchor=0.005,
+            **LEGEND_STYLE_LARGE,
+        )
         if show_title:
             fig.suptitle(
                 f"Snapshot ego networks ({k_hops}-hop, orientation-coloured){title_suffix}",
@@ -919,6 +811,7 @@ def plot_ego_3hop_snapshots(
     return written
 
 
+# Draw one figure per agent, showing the union of all partnerships active at any point in [t_start, t_end], with k-hop ego networks and orientation-coloured nodes.
 def plot_ego_3hop_aggregate_per_agent(
     partnerships_df: pd.DataFrame,
     partnerships: PartnershipArrays,
@@ -935,12 +828,6 @@ def plot_ego_3hop_aggregate_per_agent(
     formats: OutputFormats = OutputFormats(),
 ) -> list[str]:
     """One figure per agent, sized to that agent's own subgraph density.
-
-    Unlike plot_ego_3hop_aggregate (which stacks all agents into rows of
-    one shared figure), this writes a separate file per agent — useful
-    when you want to inspect partnership chains in detail without a
-    dense hub agent's panel being squeezed by a sparse agent's row
-    height, or vice versa.
 
     Filenames are ``{filename_prefix}_agent{ego}.{ext}``.
     """
@@ -960,17 +847,17 @@ def plot_ego_3hop_aggregate_per_agent(
 
             n_nodes = sub.number_of_nodes()
             n_edges = sub.number_of_edges()
-            # Scale figure size to how crowded this particular agent's
+            # Scale figure size depending on how dense the focal agent's
             # subgraph is, rather than a fixed size for every agent.
             density_factor = 1.0 + min(n_edges / 30, 1.5)
-            fig_w = 8.0 * density_factor
+            fig_w = 11.2 * density_factor
             fig_h = 6.0 * density_factor
 
             edge_alpha = 0.6 if n_edges > 40 else 0.55
             edge_width = 1 if n_edges > 40 else 0.8
 
             fig = plt.figure(figsize=(fig_w, fig_h))
-            gs = gridspec.GridSpec(1, 1, figure=fig, left=0.05, right=0.97, top=0.90, bottom=0.14)
+            gs = gridspec.GridSpec(1, 1, figure=fig, left=0.05, right=0.97, top=0.90, bottom=0.08)
             ax = fig.add_subplot(gs[0, 0])
             _draw_ego_panel(
                 ax,
@@ -980,8 +867,8 @@ def plot_ego_3hop_aggregate_per_agent(
                 ego,
                 edge_alpha=edge_alpha,
                 edge_width=edge_width,
-                ego_node_size=300,
-                partner_node_size=250,
+                ego_node_size=500,
+                partner_node_size=350,
             )
 
             fig.suptitle(
@@ -991,7 +878,11 @@ def plot_ego_3hop_aggregate_per_agent(
                 fontweight="bold",
                 y=0.97,
             )
-            _add_legend(fig, y_anchor=0.03)
+            _add_legend(
+                fig,
+                y_anchor=0.008,
+                **LEGEND_STYLE_LARGE,
+            )
 
             out = os.path.join(output_dir, f"{filename_prefix}_agent{ego}")
             written.extend(save_figure(fig, out, formats))
