@@ -1,4 +1,7 @@
-"""The partnership generator: core simulation engine."""
+"""The partnership generator: core simulation engine.
+
+Check if all the modules in this package are imported here, so that they are available for use
+"""
 
 from partnersim_dynet.generator.concurrency import select_concurrent_indices
 from partnersim_dynet.generator.core import PartnershipGenerator
